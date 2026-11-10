@@ -1,0 +1,12 @@
+#!/bin/sh
+# A ogni kernel installato: aggiunge DTB+hwids 83HL al UKI Ubuntu e lo firma con la MOK locale.
+# Gira prima di zz-update-grub (ordine alfabetico). $1=versione, $2=immagine
+set -e
+V="$1"; IMG="${2:-/boot/vmlinuz-$V}"
+[ -f /etc/83hl/mok/MOK.key ] || { echo "83hl: chiave MOK assente, kernel $V NON rifirmato" >&2; exit 0; }
+[ -f "$IMG" ] || exit 0
+/usr/local/sbin/83hl-build-uki "$IMG" "$IMG" >/var/log/83hl-uki-$V.log 2>&1 \
+  || { echo "83hl: rifirma di $IMG fallita, vedi /var/log/83hl-uki-$V.log" >&2; exit 1; }
+echo "83hl: $IMG ricostruito con DTB 83HL e firmato MOK"
+# moduli video (iris X1P42100): precompilati se disponibili, altrimenti ci pensa DKMS se installato
+/usr/local/sbin/83hl-sign-modules "$V" || echo "83hl: moduli video non installati per $V" >&2

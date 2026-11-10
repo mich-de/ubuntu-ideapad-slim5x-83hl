@@ -1,0 +1,5 @@
+#!/bin/sh
+# alsa-ucm-conf cerca "Ideapad" ma il DMI dell'83HL è "IdeaPad": rende la regex insensibile alla P. Idempotente.
+F=/usr/share/alsa/ucm2/conf.d/x1e80100/x1e80100.conf
+[ -f "$F" ] && grep -q 'Ideapad\.\*5' "$F" && sed -i --follow-symlinks 's/Ideapad\.\*5/Idea[Pp]ad.*5/' "$F"
+exit 0

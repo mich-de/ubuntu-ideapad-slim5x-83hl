@@ -1,0 +1,34 @@
+#!/bin/bash
+# Ricostruisce il kernel UKI Ubuntu (stubble) con DTB + hwids 83HL e lo firma con la chiave MOK locale.
+# Uso: 83hl-build-uki <vmlinuz-ubuntu-firmato> <uscita> [dir-chiavi] [dir-dtb] [dir-hwids] [stubble.efi] [sbat]
+# Default per il sistema installato: chiavi /etc/83hl/mok, DTB /usr/lib/83hl, hwids /usr/share/83hl/hwids.
+set -euo pipefail
+IN=$1; OUT=$2
+KEYS=${3:-/etc/83hl/mok}; DTBDIR=${4:-/usr/lib/83hl}; HW=${5:-/usr/share/83hl/hwids}; STUB=${6:-/usr/lib/stubble/stubble.efi}
+SBAT=${7:-$(dirname "$STUB")/../../share/stubble/sbat}
+W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
+# estrae la sezione .linux (kernel EFI interno) e .uname dal UKI Ubuntu
+python3 -I - "$IN" "$W" <<'EOF'
+import sys, pefile
+pe = pefile.PE(sys.argv[1], fast_load=True)
+got = {}
+for s in pe.sections:
+    n = s.Name.rstrip(b'\0').decode()
+    if n in ('.linux', '.uname'):
+        d = s.get_data()[:s.Misc_VirtualSize]
+        open(f'{sys.argv[2]}/{n[1:]}', 'wb').write(d); got[n] = len(d)
+if '.linux' not in got:
+    # non è un UKI: è già il kernel EFI puro
+    open(f'{sys.argv[2]}/linux', 'wb').write(open(sys.argv[1], 'rb').read())
+print('sezioni estratte:', got or 'nessuna (kernel puro)')
+EOF
+UNAME=$(tr -d '\0\n' < "$W/uname" 2>/dev/null || true)
+DTBS=(); for d in "$DTBDIR"/*.dtb; do DTBS+=(--devicetree-auto="$d"); done
+ukify build \
+  --stub="$STUB" --linux="$W/linux" ${UNAME:+--uname="$UNAME"} \
+  "${DTBS[@]}" --hwids="$HW" --sbat=@"$SBAT" \
+  --signtool=sbsign --secureboot-private-key="$KEYS/MOK.key" --secureboot-certificate="$KEYS/MOK.crt" \
+  --output="$W/uki.efi"
+sbverify --cert "$KEYS/MOK.crt" "$W/uki.efi"
+install -m644 "$W/uki.efi" "$OUT"
+echo "UKI 83HL: $OUT ($UNAME)"

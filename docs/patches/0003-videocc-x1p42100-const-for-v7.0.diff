@@ -1,0 +1,20 @@
+--- a/drivers/clk/qcom/videocc-x1p42100.c	2026-11-10 22:28:50.223222426 +0100
++++ b/drivers/clk/qcom/videocc-x1p42100.c	2026-11-10 23:23:20.287184263 +0100
+@@ -526,7 +526,7 @@
+ 	&video_cc_pll1,
+ };
+ 
+-static const u32 video_cc_x1p42100_critical_cbcrs[] = {
++static u32 video_cc_x1p42100_critical_cbcrs[] = {
+ 	0x80f4, /* VIDEO_CC_AHB_CLK */
+ 	0x8150, /* VIDEO_CC_SLEEP_CLK */
+ 	0x8124, /* VIDEO_CC_XO_CLK */
+@@ -540,7 +540,7 @@
+ 	.fast_io = true,
+ };
+ 
+-static const struct qcom_cc_driver_data video_cc_x1p42100_driver_data = {
++static struct qcom_cc_driver_data video_cc_x1p42100_driver_data = {
+ 	.alpha_plls = video_cc_x1p42100_plls,
+ 	.num_alpha_plls = ARRAY_SIZE(video_cc_x1p42100_plls),
+ 	.clk_cbcrs = video_cc_x1p42100_critical_cbcrs,

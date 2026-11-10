@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * 83HL: DTS di Glathe + EC Qualcomm di riferimento (ventola).
+ * EC su I2C6 Windows = i2c5 Linux, indirizzo 0x76 (DSDT: UMPC I2cSerialBusV2 0x0076 "\_SB.I2C6").
+ * IRQ: DSDT GIO0 pin 0x140 ("RCVD EC INT") -> direct-connect idx 5 -> GSIV 0x2F8 -> SPI 728 -> PDC 142 -> gpio66
+ * (stessa conversione verificata su coperchio gpio92, touchpad gpio3, tastiera gpio67).
+ */
+#include "x1p42100-lenovo-ideapad-slim5x-lcd.dts"
+
+&i2c5 {
+	embedded-controller@76 {
+		compatible = "qcom,hamoa-crd-ec";
+		reg = <0x76>;
+
+		interrupts-extended = <&tlmm 66 IRQ_TYPE_EDGE_FALLING>;
+
+		pinctrl-0 = <&ec_int_n_default>;
+		pinctrl-names = "default";
+	};
+};
+
+&tlmm {
+	ec_int_n_default: ec-int-n-state {
+		pins = "gpio66";
+		function = "gpio";
+		bias-disable;
+	};
+};

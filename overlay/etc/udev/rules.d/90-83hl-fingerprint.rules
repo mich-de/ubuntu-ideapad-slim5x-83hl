@@ -1,0 +1,2 @@
+# Goodix MOC 27c6:650a: niente autosuspend (evita errori dopo chiusura coperchio)
+ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="27c6", ATTR{idProduct}=="650a", TEST=="power/control", ATTR{power/control}="on"

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Dopo il risveglio riavvia fprintd, così il sensore Goodix viene riaperto pulito
+[ "$1" = post ] && systemctl try-restart fprintd.service
+exit 0

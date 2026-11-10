@@ -1,0 +1,70 @@
+#!/bin/bash
+# Prepara un Ubuntu appena installato per l'83HL con Secure Boot ATTIVO, PRIMA del riavvio.
+# Uso dalla sessione live, a installazione finita:  sudo /cdrom/83hl/83hl-install-target [/target]
+#  1. installa ukify/sbsigntool/stubble dai .deb sulla chiavetta
+#  2. copia firmware, DTB, hwids, fix audio/impronta, moduli video, hook kernel
+#  3. genera una chiave MOK NUOVA solo per questo sistema, rifirma i kernel in /boot
+#  4. mette in coda la chiave con mokutil: al riavvio MokManager chiede di registrarla
+set -euo pipefail
+[ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
+SRC=$(dirname "$(readlink -f "$0")")
+T=${1:-/target}
+if ! [ -x "$T/usr/bin/apt" ]; then
+  echo "Sistema installato non trovato in $T."
+  lsblk -o NAME,FSTYPE,SIZE,LABEL,MOUNTPOINT | grep -E 'ext4|btrfs' || true
+  read -rp "Partizione radice del sistema installato (es. /dev/nvme0n1p5): " DEV
+  [ -b "$DEV" ] || { echo "Dispositivo non valido"; exit 1; }
+  T=/mnt/83hl-target; mkdir -p $T; mount "$DEV" $T
+fi
+if awk '$2=="/boot"' "$T/etc/fstab" | grep -q . && ! mountpoint -q "$T/boot"; then
+  echo "ATTENZIONE: /boot è una partizione separata (es. disco cifrato) e non è montata in $T/boot. Montala e rilancia."; exit 1
+fi
+for d in dev proc sys run sys/firmware/efi/efivars; do mountpoint -q "$T/$d" || mount --bind /$d "$T/$d"; done
+trap 'for d in sys/firmware/efi/efivars run sys proc dev; do umount -l "$T/$d" 2>/dev/null || true; done' EXIT
+
+echo "== 1. Pacchetti (offline)"
+mkdir -p "$T/tmp/83hl-debs"; cp "$SRC"/debs/*.deb "$T/tmp/83hl-debs/"
+chroot "$T" sh -c 'dpkg -i --skip-same-version /tmp/83hl-debs/*.deb' ; rm -rf "$T/tmp/83hl-debs"
+
+echo "== 2. Overlay"
+tar -C "$T" -xpf "$SRC/overlay.tar" --no-same-owner
+chown -R root:root "$T/usr/lib/83hl" "$T/usr/share/83hl" "$T/usr/src/83hl-drivers-1.0" "$T/etc/dkms/framework.conf.d/83hl.conf" "$T/etc/modprobe.d/83hl-ec.conf" "$T/usr/lib/firmware/qcom/x1p42100" "$T/usr/local/sbin" "$T/usr/local/bin" "$T/etc/kernel/postinst.d/zz-83hl-uki"
+chroot "$T" /usr/local/sbin/83hl-fix-ucm
+rm -f "$T/boot/dtb"   # con Secure Boot GRUB rifiuta 'devicetree': il DTB va nel UKI
+
+echo "== 3. Chiave MOK di questo sistema"
+mkdir -p "$T/etc/83hl/mok"; chmod 700 "$T/etc/83hl" "$T/etc/83hl/mok"
+if [ ! -f "$T/etc/83hl/mok/MOK.key" ]; then
+  openssl req -new -x509 -newkey rsa:2048 -nodes -days 36500 -sha256 \
+    -subj "/CN=83HL $(cat "$T/etc/hostname" 2>/dev/null || echo ubuntu) kernel MOK/" \
+    -addext "extendedKeyUsage=codeSigning" \
+    -keyout "$T/etc/83hl/mok/MOK.key" -out "$T/etc/83hl/mok/MOK.crt" 2>/dev/null
+  openssl x509 -in "$T/etc/83hl/mok/MOK.crt" -outform DER -out "$T/etc/83hl/mok/MOK.der"
+  chmod 600 "$T/etc/83hl/mok/MOK.key"
+fi
+for k in "$T"/boot/vmlinuz-*; do
+  [ -L "$k" ] && continue
+  v=${k##*/vmlinuz-}
+  chroot "$T" /etc/kernel/postinst.d/zz-83hl-uki "$v" "/boot/vmlinuz-$v"
+done
+chroot "$T" update-grub
+
+echo "== Video HW: DKMS per i kernel futuri (serve rete; opzionale)"
+if chroot "$T" sh -c 'apt-get -qq update && DEBIAN_FRONTEND=noninteractive apt-get -y -qq install dkms' >/dev/null 2>&1; then
+  chroot "$T" sh -c 'dkms status 83hl-drivers/1.0 | grep -q . || dkms add /usr/src/83hl-drivers-1.0' && echo "DKMS 83hl-drivers registrato"
+else
+  echo "Rete assente: i moduli video sono installati per i kernel attuali; per i futuri lancia poi"
+  echo "  sudo apt install dkms && sudo dkms add /usr/src/83hl-drivers-1.0"
+fi
+
+echo "== 4. Registrazione MOK"
+if mokutil --test-key "$T/etc/83hl/mok/MOK.der" 2>&1 | grep -q 'already enrolled'; then
+  echo "Chiave già registrata."
+else
+  echo "Scegli una password temporanea (la chiederà MokManager al riavvio, tastiera US):"
+  mokutil --import "$T/etc/83hl/mok/MOK.der"
+  echo
+  echo "Al riavvio compare la schermata blu MokManager:"
+  echo "  Enroll MOK -> Continue -> Yes -> password -> Reboot"
+fi
+echo "Fatto. Ora puoi riavviare."

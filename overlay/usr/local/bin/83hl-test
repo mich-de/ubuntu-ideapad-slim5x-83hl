@@ -1,0 +1,63 @@
+#!/bin/bash
+# Test periferiche Lenovo IdeaPad Slim 5x 14Q8X9 (83HL). Uso: sudo 83hl-test
+# Scrive il report sulla partizione 83HL-LOG della chiavetta (se c'è) e in /root.
+[ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
+TS=$(date +%Y%m%d-%H%M%S); R=/root/83hl-report-$TS.txt
+sec() { printf '\n===== %s =====\n' "$1"; }
+ok()  { printf '[%s] %s\n' "$1" "$2"; }
+chk() { # $1 nome, $2 comando condizione
+  if eval "$2" >/dev/null 2>&1; then ok OK "$1"; else ok KO "$1"; fi; }
+{
+sec "SISTEMA"; uname -a; cat /proc/device-tree/model 2>/dev/null; echo
+cat /proc/cmdline; cat /sys/class/dmi/id/product_family /sys/class/dmi/id/bios_version 2>/dev/null
+
+sec "RIEPILOGO"
+chk "DTB 83HL caricato"           "tr -d '\0' </proc/device-tree/compatible | grep -q ideapad-slim5x"
+chk "GPU Adreno (msm + render)"   "ls /dev/dri/renderD* && dmesg | grep -qi 'msm_dpu\|adreno'"
+chk "Accelerazione 3D (non llvmpipe)" "su -l \$(logname 2>/dev/null || echo ubuntu) -c 'DISPLAY=:0 glxinfo -B' 2>/dev/null | grep -qi 'renderer.*adreno\|FD7'"
+chk "Retroilluminazione"          "ls /sys/class/backlight/* "
+chk "Tastiera I2C-HID"            "grep -qiE 'keyboard' /proc/bus/input/devices"
+chk "Touchpad"                    "grep -qiE 'touchpad|FTCS' /proc/bus/input/devices"
+chk "Wi-Fi ath12k"                "ip link | grep -q wl"
+chk "Bluetooth"                   "ls /sys/class/bluetooth/hci0"
+chk "Scheda audio X1E80100"       "grep -q 'Ideapad\|X1E80100' /proc/asound/cards"
+chk "Profilo UCM caricato"        "alsaucm -c hw:\$(awk '/X1E80100/{print \$1;exit}' /proc/asound/cards) list _verbs | grep -q HiFi"
+chk "Webcam"                      "ls /dev/video0"
+chk "Lettore impronte 27c6:650a"  "lsusb -d 27c6:650a"
+chk "Lettore SD (mmc host)"       "ls /sys/class/mmc_host/mmc*"
+chk "Batteria"                    "ls /sys/class/power_supply/ | grep -qi bat"
+chk "USB-C typec"                 "ls /sys/class/typec/port0"
+chk "ADSP avviato"                "grep -l running /sys/class/remoteproc/*/state"
+chk "Sospensione deep disponibile" "grep -q deep /sys/power/mem_sleep"
+chk "Video HW: modulo iris 83HL"   "modinfo -F filename qcom_iris | grep -q updates/83hl && lsmod | grep -q qcom_iris"
+chk "Video HW: decoder V4L2 iris"  "grep -qi iris /sys/class/video4linux/*/name"
+chk "EC ventola (qcom-hamoa-ec)"    "modprobe qcom_hamoa_ec && ls /sys/class/thermal/*/type | xargs grep -l qcom_ec_fan"
+
+sec "REMOTEPROC"; for r in /sys/class/remoteproc/*; do echo "$(cat $r/name) $(cat $r/state) $(cat $r/firmware 2>/dev/null)"; done
+sec "FIRMWARE NON TROVATI"; dmesg | grep -iE 'firmware|direct firmware load' | grep -iE 'fail|error|not found|-2' | sort -u
+sec "ERRORI KERNEL"; dmesg --level=err,crit,alert,emerg | tail -80
+sec "DEFERRED PROBE"; cat /sys/kernel/debug/devices_deferred 2>/dev/null
+sec "INPUT"; grep -E '^N:|^H:' /proc/bus/input/devices
+sec "DRM"; ls -la /dev/dri; for c in /sys/class/drm/card*-*; do echo "$c $(cat $c/status)"; done
+sec "BACKLIGHT"; for b in /sys/class/backlight/*; do echo "$b max=$(cat $b/max_brightness) cur=$(cat $b/brightness)"; done
+sec "AUDIO"; cat /proc/asound/cards; aplay -l 2>&1; arecord -l 2>&1; command -v wpctl >/dev/null && su -l "$(logname 2>/dev/null)" -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) wpctl status' 2>&1 | head -60
+sec "RETE"; ip -br link; rfkill list; iw dev 2>&1; hciconfig -a 2>&1 | head -20
+sec "USB"; lsusb; lsusb -t
+sec "PCI"; lspci -nnk
+sec "MMC"; ls -la /sys/class/mmc_host/ 2>&1; dmesg | grep -iE 'mmc|sdhci' | tail -20
+sec "VIDEO HW (IRIS)"; modinfo -F filename qcom_iris videocc_x1p42100 2>&1; for v in /sys/class/video4linux/*; do echo "$v $(cat $v/name)"; done; dmesg | grep -iE 'iris|videocc|vpu' | tail -30
+if command -v gst-inspect-1.0 >/dev/null; then gst-inspect-1.0 2>/dev/null | grep -iE 'v4l2.*(dec|enc)'; fi
+sec "EC VENTOLA (test una tantum, non permanente)"; /usr/local/sbin/83hl-ec test 2>&1; ls /sys/bus/i2c/devices/ | grep -i 0076
+sec "IMPRONTA"; lsusb -d 27c6:650a -v 2>/dev/null | head -20; fprintd-list "$(logname 2>/dev/null)" 2>&1 | head
+sec "ALIMENTAZIONE"; for p in /sys/class/power_supply/*; do echo "== $p"; cat $p/uevent; done
+sec "TYPEC"; ls -la /sys/class/typec/ 2>&1
+sec "SOSPENSIONE"; cat /sys/power/mem_sleep /sys/power/state
+sec "TERMICO"; for t in /sys/class/thermal/thermal_zone*; do echo "$(cat $t/type) $(cat $t/temp)"; done
+sec "JOURNAL ERRORI"; journalctl -b -p err --no-pager | tail -60
+sec "DMESG COMPLETO"; dmesg
+} > "$R" 2>&1
+
+echo "Report: $R"; sed -n '/===== RIEPILOGO/,/===== REMOTEPROC/p' "$R" | head -25
+# copia sulla partizione LOG della chiavetta
+DEV=$(blkid -L 83HL-LOG 2>/dev/null)
+if [ -n "$DEV" ]; then M=$(mktemp -d); mount "$DEV" "$M" && cp "$R" "$M/" && sync && umount "$M" && echo "Copiato su $DEV (83HL-LOG)"; fi

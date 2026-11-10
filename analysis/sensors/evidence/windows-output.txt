@@ -1,0 +1,29 @@
+### win-sensor-api.ps1
+Accelerometer : null
+Gyrometer : null
+LightSensor : null
+Magnetometer : null
+Inclinometer : null
+OrientationSensor : null
+SimpleOrientationSensor : null
+ProximitySensor : no GetDefault()
+Barometer : null
+Compass : null
+HingeAngleSensor : no GetDefault()
+ActivitySensor : no GetDefault()
+Pedometer : no GetDefault()
+HumanPresenceSensor : null
+--- sensor device interfaces
+### win-sensor-interfaces.ps1
+arch=ARM64
+--- GUID_DEVINTERFACE_SENSOR interfaces
+no key
+--- WinRT DeviceInformation sensors
+count=0
+--- services
+
+Name               Status StartType
+----               ------ ---------
+SensorDataService Stopped    Manual
+SensorService     Running    Manual
+SensrSvc          Stopped    Manual

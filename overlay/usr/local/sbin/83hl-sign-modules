@@ -1,0 +1,21 @@
+#!/bin/bash
+# Firma con la MOK e installa i moduli 83HL (iris, videocc X1P42100, EC ventola) per un kernel.
+# Uso: 83hl-sign-modules <kver> [dir-chiavi] [radice]
+#  - moduli precompilati: /usr/lib/83hl/modules/<kver>/*.ko
+#  - destinazione:        /usr/lib/modules/<kver>/updates/83hl/  (ha priorità sui moduli Ubuntu)
+set -euo pipefail
+V=$1; KEYS=${2:-/etc/83hl/mok}; R=${3:-}
+SRC=$R/usr/lib/83hl/modules/$V
+DST=$R/usr/lib/modules/$V/updates/83hl
+SIGN=$R/usr/local/lib/83hl/sign-file
+if [ ! -d "$SRC" ]; then
+  echo "83hl: nessun modulo 83HL precompilato per $V (servirà DKMS: sudo apt install dkms linux-headers-$V)"; exit 0
+fi
+[ -d "$R/usr/lib/modules/$V" ] || { echo "83hl: kernel $V non installato"; exit 0; }
+mkdir -p "$DST"
+for m in "$SRC"/*.ko; do
+  install -m644 "$m" "$DST/"
+  "$SIGN" sha512 "$KEYS/MOK.key" "$KEYS/MOK.crt" "$DST/$(basename "$m")"
+done
+if [ -n "$R" ]; then depmod -b "$R" "$V"; else depmod "$V"; fi
+echo "83hl: moduli 83HL (video, EC) firmati e installati per $V"

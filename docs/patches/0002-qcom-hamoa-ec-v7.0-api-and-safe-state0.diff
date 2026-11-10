@@ -1,0 +1,27 @@
+--- a/drivers/platform/arm64/qcom-hamoa-ec.c	2026-11-10 22:48:22.460576035 +0100
++++ b/drivers/platform/arm64/qcom-hamoa-ec.c	2026-11-10 23:23:20.302314962 +0100
+@@ -310,6 +310,14 @@
+ 			  0, 0, state };
+ 	int ret;
+ 
++	/* 83HL: stato 0 = controllo automatico dell'EC (debug off), non ventola spenta */
++	if (state == 0) {
++		ret = qcom_ec_fan_debug_mode_off(ec_cdev);
++		if (!ret)
++			ec_cdev->state = 0;
++		return ret;
++	}
++
+ 	ret = i2c_smbus_write_i2c_block_data(client, EC_FAN_DBG_CONTROL_CMD,
+ 					     sizeof(request), request);
+ 	if (ret) {
+@@ -393,7 +401,8 @@
+ 		ec_cdev->fan_id = i + 1;
+ 		ec_cdev->parent_dev = dev;
+ 
+-		ec_cdev->cdev = devm_thermal_of_child_cooling_device_register(dev, NULL, name, ec_cdev,
++		ec_cdev->cdev = /* 83HL: API 7.0 (senza nodo OF figlio) */
++				devm_thermal_of_cooling_device_register(dev, NULL, name, ec_cdev,
+ 									&qcom_ec_thermal_ops);
+ 		if (IS_ERR(ec_cdev->cdev)) {
+ 			return dev_err_probe(dev, PTR_ERR(ec_cdev->cdev),

@@ -1,0 +1,99 @@
+UBUNTU 26.04.1 PER LENOVO IDEAPAD SLIM 5x 14Q8X9 (83HL) - ISTRUZIONI
+=====================================================================
+
+Contenuto della chiavetta
+- Partizione Ubuntu (E:)  : sistema live, kernel 83HL firmato, cartella /83hl
+- Partizione EFI (6 MB)   : avvio, nessuna lettera
+- Partizione 83HL-LOG (F:): questo file e i report di test
+Se Windows chiede di "formattare" una di queste unita': rispondi NO.
+
+Secure Boot resta SEMPRE ATTIVO. Non va disattivato.
+
+
+1. BIOS (una volta sola)
+-----------------------
+1. Riavvia e premi F2 ripetutamente all'accensione.
+2. Security > Secure Boot:
+   - Secure Boot: Enabled (lascialo attivo)
+   - "Allow Microsoft 3rd Party UEFI CA": Enabled
+3. Salva ed esci (F10 > Yes).
+Se l'opzione 3rd Party UEFI CA non esiste, fermati e segnalalo.
+
+
+2. REGISTRARE LA CHIAVE 83HL (una volta sola)
+--------------------------------------------
+1. Chiavetta collegata, accendi e premi F12 ripetutamente.
+2. Scegli la chiavetta SanDisk (voce EFI USB).
+3. Nel menu GRUB scegli: "Registra chiave 83HL (MokManager: Enroll key from disk)"
+4. Schermata blu MokManager:
+   Enroll key from disk > seleziona la chiavetta > MOK-83HL.der
+   > Continue > Yes > Reboot
+   (la tastiera in MokManager e' americana)
+5. Se invece compare "Verification failed" o "Security Violation": premi un tasto,
+   si apre MokManager, e fai la stessa procedura del punto 4.
+
+
+3. PROVARE UBUNTU SENZA INSTALLARE
+---------------------------------
+1. F12 > chiavetta > voce "Ubuntu 83HL - IdeaPad Slim 5x (Secure Boot)".
+   Se resta nero: riavvia e prova "Ubuntu 83HL - debug (testo, log completi)",
+   poi fai una foto dello schermo.
+2. Al desktop scegli "Prova Ubuntu" (non installare ancora).
+3. Apri il Terminale (Ctrl+Alt+T) e scrivi:
+       sudo 83hl-test
+4. Il test stampa un riepilogo OK/KO e salva il report completo su questa
+   partizione (83HL-LOG), file 83hl-report-DATA-ORA.txt.
+5. Prova anche a mano: audio (altoparlanti e microfono), luminosita' (tasti Fn),
+   touchpad, Wi-Fi, Bluetooth, webcam, lettore SD, sospensione (chiudi il coperchio
+   10 secondi e riapri), poi rilancia "sudo 83hl-test" dopo la sospensione.
+6. Spegni, torna su Windows con la chiavetta collegata e di' a Claude "report pronto".
+
+
+4. INSTALLARE (solo dopo che il test e' andato bene)
+---------------------------------------------------
+Prima: spazio libero sul disco (riduci D: o C: da Gestione disco di Windows).
+1. Avvia la live come al punto 3 e lancia "Installa Ubuntu".
+2. Scegli "Installa insieme a Windows" o lo spazio libero.
+   NON scegliere la cifratura del disco (LUKS): servirebbero passi in piu'.
+3. A fine installazione NON premere "Riavvia". Apri il Terminale e scrivi:
+       sudo /cdrom/83hl/83hl-install-target
+   (se dice che non trova il sistema, indica la partizione Linux appena creata,
+   es. /dev/nvme0n1p5)
+4. Lo script:
+   - installa gli strumenti di firma (ukify, sbsigntool, stubble)
+   - copia firmware, DTB 83HL, correzioni audio e impronta
+   - crea una chiave MOK nuova SOLO per questo PC e firma il kernel
+   - ti chiede una password temporanea (inventala, servira' tra un minuto)
+5. Riavvia. Compare MokManager (schermata blu):
+   Enroll MOK > Continue > Yes > password scelta al punto 4 > Reboot
+6. Ubuntu parte con Secure Boot attivo. Gli aggiornamenti del kernel vengono
+   rifirmati in automatico (log in /var/log/83hl-uki-*.log).
+
+
+SE QUALCOSA VA STORTO
+--------------------
+- Schermo nero all'avvio del sistema installato: il kernel non e' stato
+  rifirmato. Avvia la chiavetta, apri il terminale e rilancia
+  "sudo /cdrom/83hl/83hl-install-target".
+- Errore di firma/shim: rifai il punto 2 (registrazione chiave).
+- Windows non viene toccato: si avvia sempre da F12 > Windows Boot Manager.
+- Per qualsiasi errore: foto dello schermo o report in questa partizione.
+
+
+DECODIFICA VIDEO HARDWARE (Iris)
+- Driver aggiunto da noi (backport per Snapdragon X1P42100), firmato con la tua chiave.
+- Funziona con le app che usano V4L2: mpv (--hwdec=v4l2m2m-copy), GStreamer/Video
+  di GNOME, ffmpeg (h264_v4l2m2m / hevc_v4l2m2m). Nei browser e' ancora sperimentale.
+- Verifica: "sudo 83hl-test" -> righe "Video HW".
+
+VENTOLA (EC)
+- Driver incluso ma DISATTIVATO di default, finche' non e' verificato sul tuo PC
+  (la ventola funziona comunque: la gestisce il firmware da solo).
+- "sudo 83hl-test" lo prova una volta e scrive l'esito nel report.
+- Comandi:  sudo 83hl-ec status | test | enable | disable
+            sudo 83hl-ec fan 0 auto      (torna al controllo automatico)
+            sudo 83hl-ec fan 0 150       (PWM fisso 80-255; sotto 80 serve --force)
+
+Cosa NON funziona su Linux (limiti noti, non risolvibili ora)
+- NPU Hexagon (driver ufficiale Qualcomm ancora in sviluppo)
+- Sensore di presenza, sensori "All-Ways Aware" (librerie Qualcomm chiuse)

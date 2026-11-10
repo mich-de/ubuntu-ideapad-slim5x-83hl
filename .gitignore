@@ -1,0 +1,23 @@
+# segreti e artefatti locali: mai nel repository
+keys/
+*.key
+*.priv
+iso/
+out/
+debs/
+hdr/
+src/
+.work.*
+*.iso
+*.ko
+*.o
+*.mod
+*.mod.c
+.*.cmd
+Module.symvers
+modules.order
+overlay/usr/lib/firmware/qcom/x1p42100/
+overlay/usr/lib/83hl/modules/
+overlay/usr/lib/83hl/*.dtb
+overlay/usr/local/lib/83hl/sign-file
+overlay/usr/src/

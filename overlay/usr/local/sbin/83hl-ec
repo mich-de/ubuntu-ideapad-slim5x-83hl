@@ -1,0 +1,30 @@
+#!/bin/bash
+# Gestione EC ventola 83HL (driver qcom-hamoa-ec)
+#   83hl-ec status            stato driver, firmware EC, ventole
+#   83hl-ec test              carica il driver una volta e mostra l'esito (non permanente)
+#   83hl-ec enable|disable    carica sempre / mai all'avvio
+#   83hl-ec fan <n> auto|<80-255> [--force]   ventola n: automatico (EC) o PWM fisso
+set -e
+[ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
+C=/etc/modprobe.d/83hl-ec.conf
+cdev() { for c in /sys/class/thermal/cooling_device*; do [ "$(cat $c/type)" = "qcom_ec_fan_$1" ] && echo $c; done; }
+case "${1:-status}" in
+  status)
+    grep -q '^blacklist' $C 2>/dev/null && echo "avvio: disattivato" || echo "avvio: attivo"
+    lsmod | grep -q qcom_hamoa_ec && echo "driver: caricato" || echo "driver: non caricato"
+    dmesg | grep -i 'qcom_ec\|hamoa' | tail -10
+    for c in /sys/class/thermal/cooling_device*; do t=$(cat $c/type); case $t in qcom_ec_fan*) echo "$t stato=$(cat $c/cur_state)/$(cat $c/max_state)";; esac; done ;;
+  test)
+    modprobe qcom_hamoa_ec || true; sleep 1; "$0" status ;;
+  enable)  sed -i 's/^blacklist qcom_hamoa_ec/# blacklist qcom_hamoa_ec/' $C; modprobe qcom_hamoa_ec; "$0" status ;;
+  disable) sed -i 's/^# blacklist qcom_hamoa_ec/blacklist qcom_hamoa_ec/' $C; modprobe -r qcom_hamoa_ec || true; "$0" status ;;
+  fan)
+    c=$(cdev $(( ${2:?numero ventola 0/1} ))); [ -n "$c" ] || { echo "ventola $2 non trovata (driver caricato?)"; exit 1; }
+    v=${3:?auto o 80-255}
+    if [ "$v" = auto ]; then v=0   # nel driver 83HL lo stato 0 = controllo automatico dell'EC
+    elif ! [[ "$v" =~ ^[0-9]+$ ]] || [ "$v" -gt 255 ]; then echo "valore non valido"; exit 1
+    elif [ "$v" -lt 80 ] && [ "${4:-}" != --force ]; then echo "PWM < 80 può surriscaldare: aggiungi --force se sei sicuro"; exit 1; fi
+    echo "$v" > $c/cur_state
+    echo "$(cat $c/type) stato=$(cat $c/cur_state)" ;;
+  *) sed -n 2,7p "$0"; exit 1 ;;
+esac
