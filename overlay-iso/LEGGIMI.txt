@@ -94,6 +94,11 @@ VENTOLA (EC)
             sudo 83hl-ec fan 0 auto      (torna al controllo automatico)
             sudo 83hl-ec fan 0 150       (PWM fisso 80-255; sotto 80 serve --force)
 
-Cosa NON funziona su Linux (limiti noti, non risolvibili ora)
-- NPU Hexagon (driver ufficiale Qualcomm ancora in sviluppo)
-- Sensore di presenza, sensori "All-Ways Aware" (librerie Qualcomm chiuse)
+NPU HEXAGON (sperimentale)
+- Installa lo stack:  sudo 83hl-npu-setup
+- Prova:              sudo 83hl-npu-test   (log anche su questa partizione)
+- Il DSP e FastRPC dovrebbero funzionare; l'esecuzione di modelli AI (QNN) e' incerta.
+
+SENSORI
+- Il tuo modello NON ha sensori di presenza, luce o orientamento (sono segnaposto
+  del firmware Qualcomm, assenti anche in Windows). Conferma: sudo 83hl-sensors-test

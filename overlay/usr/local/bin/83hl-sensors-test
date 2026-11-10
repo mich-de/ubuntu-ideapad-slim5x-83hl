@@ -1,0 +1,44 @@
+#!/bin/sh
+# 83hl-sensors-test: stato dei sensori sul Lenovo 83HL sotto Linux.
+# Atteso: nessun dispositivo IIO (l'hardware non monta sensori ambientali, vedi README.md);
+# unico "sensore" reale: interruttore Hall del coperchio (gpio-keys, tlmm 92).
+rc=0
+echo "== IIO (/sys/bus/iio/devices)"
+n=0
+for d in /sys/bus/iio/devices/iio:device*; do
+	[ -e "$d/name" ] || continue
+	n=$((n+1))
+	echo "INFO  $(basename "$d") name=$(cat "$d/name")"
+	for f in "$d"/in_*_raw "$d"/in_*_input; do
+		[ -r "$f" ] && echo "      $(basename "$f")=$(cat "$f" 2>/dev/null)"
+	done
+done
+[ "$n" -eq 0 ] && echo "OK    nessun dispositivo IIO (atteso su 83HL)" \
+	|| echo "NOTA  $n dispositivi IIO trovati: inatteso, riportare l'output"
+
+echo "== Coperchio (SW_LID)"
+lid=""
+for i in /sys/class/input/input*; do
+	[ -r "$i/capabilities/sw" ] || continue
+	sw=$(cat "$i/capabilities/sw")
+	# bit 0 = SW_LID
+	case "$sw" in *[13579bdf]) lid="$i";; esac
+done
+if [ -n "$lid" ]; then
+	echo "OK    interruttore coperchio: $(cat "$lid/name") ($lid)"
+else
+	echo "KO    nessun dispositivo input con SW_LID (gpio-keys non caricato?)"; rc=1
+fi
+
+echo "== ADSP (solo informativo: nessun sensore dietro)"
+for r in /sys/class/remoteproc/remoteproc*; do
+	[ -r "$r/name" ] && echo "INFO  $(cat "$r/name"): $(cat "$r/state")"
+done
+
+echo "== iio-sensor-proxy"
+if command -v monitor-sensor >/dev/null 2>&1; then
+	timeout 3 monitor-sensor 2>&1 | sed -n 1,8p | sed 's/^/      /'
+else
+	echo "INFO  monitor-sensor non installato (non necessario)"
+fi
+exit $rc
