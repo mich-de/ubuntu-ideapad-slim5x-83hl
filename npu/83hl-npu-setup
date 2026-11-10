@@ -1,0 +1,89 @@
+#!/bin/bash
+# 83hl-npu-setup: installa/configura lo userspace NPU (Hexagon CDSP via FastRPC) sul sistema target. Idempotente, offline.
+# Payload atteso in /usr/lib/83hl/npu (oppure $NPU_SRC, o la cartella accanto allo script):
+#   stage/      albero qualcomm/fastrpc compilato (libcdsprpc, cdsprpcd, fastrpc_test, udev, systemd)
+#   dsp/cdsp/   librerie lato DSP Lenovo (fastrpc_shell_3, fastrpc_shell_unsigned_3, *_skel.so, libc++ Hexagon)
+#   debs/       libyaml-0-2, libbsd0, libmd0 (usati solo se mancano)
+#   qairt/      (opzionale, proprietario Qualcomm) sottoinsieme runtime QAIRT: bin/, lib/, lib/hexagon-v73/unsigned/
+#   qnn-test/   (opzionale) modello di prova per qnn-net-run
+# Uso: sudo 83hl-npu-setup [--windows <mountpoint C:>]   (--windows: estrae dsp/cdsp dal DriverStore se manca nel payload)
+set -uo pipefail
+[ "$(id -u)" = 0 ] || { echo "serve root: sudo $0"; exit 1; }
+SRC=${NPU_SRC:-}; for c in "$SRC" /usr/lib/83hl/npu "$(dirname "$(readlink -f "$0")")"; do [ -n "$c" ] && [ -d "$c/stage" ] && { SRC=$c; break; }; done
+[ -d "$SRC/stage" ] || { echo "KO: payload non trovato (cercato in /usr/lib/83hl/npu)"; exit 1; }
+WIN=; [ "${1:-}" = "--windows" ] && WIN=${2:-}
+FWDIR=/usr/lib/firmware/qcom/x1p42100/LENOVO/83HL
+DSPDIR=/usr/share/qcom/x1p42100/LENOVO/83HL/dsp          # fastrpc cerca <dir>/cdsp/<file> poi <dir>/<file>
+ok() { echo "  ok  $*"; }; ko() { echo "  KO  $*"; RC=1; }; RC=0
+
+echo "[1/7] dipendenze runtime (libyaml, libbsd)"
+ldconfig
+for l in libyaml-0.so.2 libbsd.so.0; do
+  if ldconfig -p | grep -q "$l"; then ok "$l presente"
+  else dpkg -i "$SRC"/debs/libmd0_*.deb "$SRC"/debs/libbsd0_*.deb "$SRC"/debs/libyaml-0-2_*.deb >/dev/null 2>&1; ldconfig
+       ldconfig -p | grep -q "$l" && ok "$l installata dai deb del payload" || ko "$l mancante"; fi
+done
+
+echo "[2/7] fastrpc userspace (qualcomm/fastrpc) in /usr/local"
+umask 022; cp -dR "$SRC"/stage/. / || ko "copia stage incompleta"   # senza -p: non altera permessi delle directory di sistema esistenti
+ldconfig
+ldconfig -p | grep -q 'libcdsprpc.so.1' && ok "libcdsprpc.so.1 registrata" || ko "libcdsprpc non vista da ldconfig (/usr/local/lib in ld.so.conf?)"
+[ -e /usr/local/lib/libcdsprpc.so ] && ok "libcdsprpc.so (nome non versionato richiesto da libQnnHtpV73Stub.so)"
+
+echo "[3/7] gruppo fastrpc"
+getent group fastrpc >/dev/null || systemd-sysusers /usr/lib/sysusers.d/fastrpc.conf 2>/dev/null || groupadd --system fastrpc
+getent group fastrpc >/dev/null && ok "gruppo fastrpc" || ko "gruppo fastrpc non creato"
+for u in ${SUDO_USER:-} $(awk -F: '$3>=1000 && $3<60000 {print $1}' /etc/passwd); do
+  id -nG "$u" 2>/dev/null | grep -qw fastrpc || { usermod -aG fastrpc "$u" && ok "utente $u aggiunto a fastrpc (serve nuovo login)"; }
+done
+
+echo "[4/7] librerie lato DSP in $DSPDIR/cdsp"
+install -d "$DSPDIR/cdsp"
+if [ ! -f "$SRC/dsp/cdsp/fastrpc_shell_unsigned_3" ] && [ -n "$WIN" ]; then
+  H=$(sha256sum "$FWDIR/qccdsp8380.mbn" 2>/dev/null | cut -d' ' -f1)
+  for d in "$WIN"/Windows/System32/DriverStore/FileRepository/qcnspmcdm_ext_cdsp8380.inf_arm64_*/; do
+    [ -f "$d/qccdsp8380.mbn" ] && [ "$(sha256sum "$d/qccdsp8380.mbn" | cut -d' ' -f1)" = "$H" ] && { install -m644 "$d"/CDSP/* "$DSPDIR/cdsp/"; ok "estratte da $d"; break; }
+  done
+elif [ -f "$SRC/dsp/cdsp/fastrpc_shell_unsigned_3" ]; then
+  install -m644 "$SRC"/dsp/cdsp/* "$DSPDIR/cdsp/"
+fi
+for f in fastrpc_shell_unsigned_3 fastrpc_shell_3 libc++.so.1 libc++abi.so.1; do [ -f "$DSPDIR/cdsp/$f" ] && ok "$f" || ko "$f assente"; done
+# coerenza firmware <-> shell (stessa build CDSP.HT)
+bld() { grep -a -o 'CDSP\.HT\.[0-9a-z.]*-[0-9]*' "$1" 2>/dev/null | sort | uniq -c | sort -rn | head -1 | awk '{print $2}'; }
+FWB=$(bld "$FWDIR/qccdsp8380.mbn"); SHB=$(bld "$DSPDIR/cdsp/fastrpc_shell_unsigned_3")
+[ -n "$FWB" ] && [ "$FWB" = "$SHB" ] && ok "firmware e shell stessa build ($FWB)" || ko "build firmware '$FWB' != build shell '$SHB' (o firmware assente in $FWDIR)"
+
+echo "[5/7] configurazione fastrpc (/usr/share/qcom/conf.d/83hl.yaml)"
+install -d /usr/share/qcom/conf.d
+{ echo "machines:"
+  { cat /sys/firmware/devicetree/base/model 2>/dev/null | tr -d '\0'; echo
+    echo "Lenovo IdeaPad Slim 5x 14Q8X9 (LCD)"; echo "Lenovo IdeaPad Slim 5x 14Q8X9 (OLED)"; } | awk 'NF && !s[$0]++' |
+  while IFS= read -r m; do printf '  %s:\n    DSP_LIBRARY_PATH: x1p42100/LENOVO/83HL/dsp\n' "$m"; done
+} > /usr/share/qcom/conf.d/83hl.yaml && ok "modello DT: $(cat /sys/firmware/devicetree/base/model 2>/dev/null | tr -d '\0')"
+echo fastrpc > /etc/modules-load.d/83hl-npu.conf
+
+echo "[6/7] QAIRT/QNN (opzionale)"
+QS=$(ls -d "$SRC"/qairt/*/ 2>/dev/null | sort -V | tail -1)
+if [ -n "$QS" ] && [ -f "$QS/lib/aarch64-oe-linux-gcc11.2/libQnnHtp.so" ]; then
+  V=$(basename "$QS"); install -d /opt/qairt; rm -rf "/opt/qairt/$V"; cp -a "$QS" "/opt/qairt/$V"; ln -sfn "$V" /opt/qairt/current
+  install -m644 "$QS"/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so "$QS"/lib/hexagon-v73/unsigned/libCalculator_skel.so "$DSPDIR/cdsp/"
+  [ -d "$SRC/qnn-test" ] && { rm -rf /opt/qairt/qnn-test; cp -a "$SRC/qnn-test" /opt/qairt/qnn-test; }
+  ok "QAIRT $V in /opt/qairt/current, skel V73 in $DSPDIR/cdsp"
+elif [ -n "${NPU_QAIRT:-}" ] && [ -f "$NPU_QAIRT/lib/aarch64-oe-linux-gcc11.2/libQnnHtp.so" ]; then
+  V=$(basename "$NPU_QAIRT"); install -d "/opt/qairt/$V/bin" "/opt/qairt/$V/lib/hexagon-v73"
+  cp -a "$NPU_QAIRT/bin/aarch64-oe-linux-gcc11.2" "/opt/qairt/$V/bin/"; cp -a "$NPU_QAIRT/lib/aarch64-oe-linux-gcc11.2" "/opt/qairt/$V/lib/"
+  cp -a "$NPU_QAIRT/lib/hexagon-v73/unsigned" "/opt/qairt/$V/lib/hexagon-v73/"; ln -sfn "$V" /opt/qairt/current
+  install -m644 "$NPU_QAIRT"/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so "$NPU_QAIRT"/lib/hexagon-v73/unsigned/libCalculator_skel.so "$DSPDIR/cdsp/"
+  ok "QAIRT $V copiato da $NPU_QAIRT"
+else echo "  --  QAIRT non nel payload: solo test FastRPC. Per QNN: scaricare QAIRT (README) e rilanciare con NPU_QAIRT=<dir qairt/x.y.z>"
+fi
+
+echo "[7/7] udev + servizio cdsprpcd"
+systemctl daemon-reload 2>/dev/null
+udevadm control --reload 2>/dev/null; udevadm trigger --action=add --subsystem-match=misc --subsystem-match=dma_heap 2>/dev/null; udevadm settle -t 5 2>/dev/null
+modprobe fastrpc 2>/dev/null
+if [ -e /dev/fastrpc-cdsp ] || [ -e /dev/fastrpc-cdsp-secure ]; then
+  systemctl restart cdsprpcd.service 2>/dev/null; sleep 1
+  systemctl is-active -q cdsprpcd.service && ok "cdsprpcd attivo" || ko "cdsprpcd non attivo (journalctl -u cdsprpcd)"
+else echo "  --  /dev/fastrpc-cdsp assente ora (CDSP non avviato o DTB senza cdsp): cdsprpcd partirà via udev quando compare"; fi
+[ $RC = 0 ] && echo "SETUP OK - ora: 83hl-npu-test" || echo "SETUP con errori (vedi KO)"; exit $RC

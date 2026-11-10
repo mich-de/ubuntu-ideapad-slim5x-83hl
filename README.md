@@ -62,6 +62,7 @@ overlay/      files installed into the live session and the installed system
 overlay-iso/  83hl-install-target, LEGGIMI.txt (user instructions, Italian)
 acpi/         DSDT/SSDT dumped from Windows on an 83HL (BIOS 1.55), .aml + decompiled .dsl
 analysis/     sensors investigation with evidence
+npu/          Hexagon NPU: FastRPC userspace build, DSP extraction, QAIRT fetch, setup/test scripts
 docs/         driver diffs, upstream purwa v7 series (mbox)
 ```
 
@@ -88,7 +89,7 @@ scripts/build-iso.sh     # runs build-dtb.sh and extract-firmware.sh (needs the 
 Write `out/ubuntu-26.04.1-83hl-arm64.iso` **raw (DD mode)** to a USB stick.
 
 ## Known limits
-- Hexagon **NPU**: work in progress (no upstream userspace path confirmed yet for this laptop's signed DSP firmware).
+- Hexagon **NPU**: stack prepared in [`npu/`](npu/) (kernel `fastrpc` + DT already complete; open-source `libcdsprpc` built from source; DSP unsigned shell and `libc++` extracted from the Lenovo Windows driver, same build as the CDSP firmware; QAIRT 2.47 downloaded by script, not redistributed). FastRPC on unsigned PD: likely. QNN HTP inference: uncertain (real `soc_id` unknown).
 - No ambient-light / presence / orientation sensors exist on this model (see above).
 - Iris in browsers is still experimental; use V4L2 M2M players (mpv, GStreamer, ffmpeg).
 
