@@ -13,6 +13,7 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
+#include <linux/delay.h>
 
 #define EC_CMD_WRITE	0x62
 #define EC_CMD_READ	0x61
@@ -21,6 +22,10 @@
 #define EC_REG_TEMP(n)	(0x90 + (n))	/* n = 0..5 */
 #define EC_REG_FAN_L(n)	(0x9a + 2 * (n))
 #define EC_REG_TGT_L(n)	(0x9e + 2 * (n))
+
+static unsigned int delay_us = 10000;
+module_param(delay_us, uint, 0644);
+MODULE_PARM_DESC(delay_us, "pausa tra scrittura richiesta e lettura risposta (us)");
 
 struct l83hl_ec {
 	struct i2c_client *client;
@@ -35,8 +40,11 @@ static int l83hl_ec_read(struct l83hl_ec *ec, u8 reg, u8 *raw)
 
 	mutex_lock(&ec->lock);
 	ret = i2c_smbus_write_i2c_block_data(ec->client, EC_CMD_WRITE, sizeof(req), req);
-	if (ret >= 0)
+	if (ret >= 0) {
+		/* l'EC (firmware ENE) ha bisogno di tempo per preparare la risposta: senza pausa legge solo zeri */
+		usleep_range(delay_us, delay_us + 2000);
 		ret = i2c_smbus_read_i2c_block_data(ec->client, EC_CMD_READ, sizeof(buf), buf);
+	}
 	mutex_unlock(&ec->lock);
 	if (ret < 0)
 		return ret;

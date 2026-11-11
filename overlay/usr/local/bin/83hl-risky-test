@@ -26,10 +26,12 @@ case "$1" in
            echo "$(date +%T) PROVA: $1 (voti mask $3)" | tee -a "$T"; sync
            echo stop > $C/state 2>>"$T"; sleep 2; cp "$2/qccdsp8380.mbn" "$2/cdsp_dtbs.elf" $FW/ && sync
            if [ -n "$KA" ]; then echo 0 > $KA; [ "$3" != 0 ] && { echo "$3" > /sys/module/cdsp_keepalive_83hl/parameters/mask; echo 1 > $KA; }; fi
-           local n0; n0=$(dmesg | wc -l); echo start > $C/state 2>>"$T"; sleep 14
+           local n0; n0=$(dmesg | wc -l); echo start > $C/state 2>>"$T"; sleep 8
+           # forza una richiesta fastrpc (il timeout glink compare solo quando qualcuno interroga il CDSP) e aspetta >=40 s
+           systemctl restart cdsprpcd 2>>"$T"; timeout 60 /usr/local/bin/83hl-npu-test >>"$T" 2>&1; sleep 40
            dmesg | tail -n +$((n0+1)) | grep -iE 'remoteproc1|32300000|fastrpc|keepalive' | grep -v 'iommu group' >>"$T"
            echo "   stato=$(cat $C/state) irq_glink_cdsp=$(irqs) nodi=$(ls /dev/fastrpc-cdsp* 2>/dev/null | tr '\n' ' ')" | tee -a "$T"
-           if [ -e /dev/fastrpc-cdsp ] && ! dmesg | tail -n +$((n0+1)) | grep -qE 'intent request timed out|dsp information is incorrect|failed to create endpoint'; then
+           if [ -e /dev/fastrpc-cdsp ] && ! dmesg | tail -n +$((n0+1)) | grep -qE 'intent request timed out|dsp information is incorrect|failed to create endpoint|GET_DSP_INFO|-110'; then
              echo "   ESITO: il CDSP RISPONDE" | tee -a "$T"; sync; return 0; fi
            echo "   ESITO: non risponde" | tee -a "$T"; sync; return 1; }
          GOOD=; GM=0
