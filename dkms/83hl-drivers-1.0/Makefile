@@ -1,1 +1,1 @@
-obj-m += iris/ clk/ ec/ npu/
+obj-m += iris/ clk/ ec/ npu/ fastrpc/
