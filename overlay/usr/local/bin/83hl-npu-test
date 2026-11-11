@@ -1,0 +1,86 @@
+#!/bin/bash
+# 83hl-npu-test: verifica la catena NPU (DT -> remoteproc CDSP -> fastrpc -> userspace -> DSP unsigned PD -> QNN HTP).
+# Ogni riga: OK / KO / -- (saltato). Report in /var/log/83hl-npu-test.log e, se presente, sulla partizione 83HL-LOG.
+# Uso: sudo 83hl-npu-test [--signed]   (--signed: prova anche il signed PD, atteso KO su hardware retail)
+set -uo pipefail
+[ "$(id -u)" = 0 ] || { echo "serve root: sudo $0"; exit 1; }
+R=/var/log/83hl-npu-test.log; exec > >(tee "$R") 2>&1
+NOK=0; NKO=0
+ok() { echo "OK   $*"; NOK=$((NOK+1)); }; ko() { echo "KO   $*"; NKO=$((NKO+1)); }; sk() { echo "--   $*"; }
+DSPDIR=/usr/share/qcom/x1p42100/LENOVO/83HL/dsp/cdsp
+FWDIR=/usr/lib/firmware/qcom/x1p42100/LENOVO/83HL
+GATE=${NPU_GATE_DEV:-/dev/fastrpc-cdsp}   # solo per collaudo dello script fuori dall'hardware
+echo "== 83hl-npu-test $(date -Is) kernel $(uname -r)"
+MODEL=$(cat /sys/firmware/devicetree/base/model 2>/dev/null | tr -d '\0')
+echo "== modello DT: $MODEL"
+
+echo "--- 1. device tree"
+N=$(find /sys/firmware/devicetree/base -type d -name 'remoteproc@32300000' 2>/dev/null | head -1)
+if [ -n "$N" ]; then
+  S=$(tr -d '\0' < "$N/status" 2>/dev/null || echo okay); [ "$S" = okay ] && ok "nodo CDSP remoteproc@32300000 status=okay" || ko "nodo CDSP status=$S"
+  echo "     firmware-name: $(tr '\0' ' ' < "$N/firmware-name" 2>/dev/null)"
+  F=$N/glink-edge/fastrpc; [ -d "$F" ] && ok "nodo fastrpc ($(ls -d "$F"/compute-cb@* 2>/dev/null | wc -l) compute-cb, non-secure-domain=$([ -e "$F/qcom,non-secure-domain" ] && echo si || echo no))" || ko "nodo glink-edge/fastrpc assente nel DTB"
+else ko "nodo remoteproc@32300000 assente (DTB sbagliato?)"; fi
+
+echo "--- 2. firmware e librerie DSP"
+for f in "$FWDIR/qccdsp8380.mbn" "$FWDIR/cdsp_dtbs.elf" "$DSPDIR/fastrpc_shell_unsigned_3" "$DSPDIR/fastrpc_shell_3" "$DSPDIR/libc++.so.1"; do [ -f "$f" ] && ok "$f" || ko "$f assente"; done
+bld() { grep -a -o 'CDSP\.HT\.[0-9a-z.]*-[0-9]*' "$1" 2>/dev/null | sort | uniq -c | sort -rn | head -1 | awk '{print $2}'; }
+A=$(bld "$FWDIR/qccdsp8380.mbn"); B=$(bld "$DSPDIR/fastrpc_shell_unsigned_3"); [ -n "$A" ] && [ "$A" = "$B" ] && ok "build firmware = build shell ($A)" || ko "build firmware '$A' != shell '$B'"
+
+echo "--- 3. kernel"
+for m in qcom_q6v5_pas fastrpc; do modprobe "$m" 2>/dev/null; [ -d "/sys/module/$m" ] && ok "modulo $m caricato" || ko "modulo $m non caricato"; done
+RP=; for r in /sys/class/remoteproc/remoteproc*; do [ -e "$r/name" ] || continue; case "$(cat "$r/name" 2>/dev/null)$(readlink -f "$r/device" 2>/dev/null)" in *cdsp*|*32300000*) RP=$r;; esac; done
+if [ -n "$RP" ]; then ST=$(cat "$RP/state"); echo "     $RP name=$(cat "$RP/name") firmware=$(cat "$RP/firmware" 2>/dev/null)"
+  [ "$ST" = running ] && ok "remoteproc CDSP state=running" || ko "remoteproc CDSP state=$ST (dmesg | grep -i -e cdsp -e remoteproc)"
+else ko "nessun remoteproc CDSP in /sys/class/remoteproc"; fi
+for d in /dev/fastrpc-cdsp /dev/fastrpc-cdsp-secure; do [ -c "$d" ] && ok "$d ($(stat -c '%U:%G %a' "$d"))" || ko "$d assente"; done
+[ -c /dev/dma_heap/system ] && ok "/dev/dma_heap/system" || ko "/dev/dma_heap/system assente"
+echo "     dmesg:"; dmesg 2>/dev/null | grep -i -E 'cdsp|fastrpc|32300000' | tail -12 | sed 's/^/       /'
+
+echo "--- 4. userspace"
+ldconfig -p | grep -q 'libcdsprpc.so.1' && ok "libcdsprpc.so.1" || ko "libcdsprpc assente: lanciare 83hl-npu-setup"
+[ -n "$MODEL" ] && grep -qF "  $MODEL:" /usr/share/qcom/conf.d/83hl.yaml 2>/dev/null && ok "83hl.yaml contiene il modello DT" || ko "83hl.yaml assente o modello DT non elencato"
+systemctl is-active -q cdsprpcd.service && ok "cdsprpcd attivo" || ko "cdsprpcd non attivo: $(systemctl show -p Result --value cdsprpcd.service 2>/dev/null)"
+command -v fastrpc-healthcheck >/dev/null && { echo "     fastrpc-healthcheck:"; timeout 30 fastrpc-healthcheck 2>&1 | sed 's/^/       /'; }
+
+echo "--- 5. FastRPC end-to-end su unsigned PD (calculator/hap_example/multithreading, skel v68 open source)"
+if [ -c "$GATE" ] && command -v fastrpc_test >/dev/null; then
+  O=$(timeout 120 fastrpc_test -d 3 -U 1 -a v68 2>&1); rc=$?; echo "$O" | grep -E 'PASS|FAIL|SKIP|Passed|Failed|RESULT|rror' | sed 's/^/       /'
+  [ $rc = 0 ] && echo "$O" | grep -q '\[PASS\]' && ok "fastrpc_test unsigned PD" || ko "fastrpc_test unsigned PD (rc=$rc) -> journalctl -t fastrpc_test; dmesg"
+  if [ "${1:-}" = "--signed" ]; then O=$(timeout 120 fastrpc_test -d 3 -U 0 -a v68 2>&1); rc=$?; echo "$O" | grep -E 'PASS|FAIL|RESULT' | sed 's/^/       /'
+    [ $rc = 0 ] && ok "fastrpc_test signed PD (inatteso: il DSP accetta moduli non firmati)" || sk "signed PD rifiutato (atteso: skel di test non firmati)"; fi
+else sk "saltato: /dev/fastrpc-cdsp o fastrpc_test assenti"; fi
+
+echo "--- 6. QNN HTP (QAIRT, opzionale)"
+Q=/opt/qairt/current; QL=$Q/lib/aarch64-oe-linux-gcc11.2; QB=$Q/bin/aarch64-oe-linux-gcc11.2
+modprobe qcom_socinfo 2>/dev/null
+SOCID=$(cat /sys/devices/soc0/soc_id 2>/dev/null); echo "     soc0: soc_id=${SOCID:-assente} machine=$(cat /sys/devices/soc0/machine 2>/dev/null) (X1E80100=555; QNN legge soc_id)"
+if [ -x "$QB/qnn-net-run" ] && [ -c "$GATE" ]; then
+  export LD_LIBRARY_PATH=$QL${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}; export ADSP_LIBRARY_PATH="$DSPDIR"
+  [ -f "$DSPDIR/libQnnHtpV73Skel.so" ] && ok "skel $DSPDIR/libQnnHtpV73Skel.so" || ko "libQnnHtpV73Skel.so assente in $DSPDIR"
+  T=$(mktemp -d)
+  # qnn SPOOF cmd...: SPOOF=1 esegue in un mount namespace privato con soc_id=555 (X1E80100) al posto di quello reale
+  qnn() { local sp=$1; shift
+    if [ "$sp" = 1 ]; then echo 555 > "$T/socid"; unshare -m sh -c 'mount --bind "$0" /sys/devices/soc0/soc_id && exec "$@"' "$T/socid" "$@"; else "$@"; fi; }
+  if [ -f /opt/qairt/qnn-test/libqnn_model_8bit_quantized.so ]; then
+    for SP in 0 1; do
+      [ $SP = 1 ] && { [ -e /sys/devices/soc0/soc_id ] || break; echo "     ritento con soc_id simulato 555 (SoC reale non riconosciuto/non ammesso da questa versione QAIRT)"; }
+      rm -rf "$T/out"
+      O=$(cd /opt/qairt/qnn-test && qnn $SP timeout 300 "$QB/qnn-net-run" --backend "$QL/libQnnHtp.so" --model ./libqnn_model_8bit_quantized.so --input_list input_list.txt --output_dir "$T/out" 2>&1); rc=$?
+      echo "$O" | grep -v '^$' | tail -12 | sed 's/^/       /'
+      OUT=$(find "$T/out" -name '*.raw' 2>/dev/null | head -1)
+      if [ $rc = 0 ] && [ -s "${OUT:-/nonexistent}" ]; then ok "qnn-net-run su HTP: inferenza eseguita ($(stat -c %s "$OUT") byte, soc_id $([ $SP = 1 ] && echo 'simulato 555' || echo reale))"; break; fi
+      echo "$O" | grep -q -E 'No Snapdragon SOC|Unsupported S' && [ $SP = 0 ] && [ "$SOCID" != 555 ] && continue
+      ko "qnn-net-run su HTP (rc=$rc)"; break
+    done
+  else sk "modello di prova assente (/opt/qairt/qnn-test)"; fi
+  O=$(cd "$T" && qnn ${SP:-0} timeout 180 "$QB/qnn-platform-validator" --backend dsp --coreVersion --libVersion --testBackend --targetPath "$T/pv" 2>&1); rc=$?
+  echo "$O" | grep -v '^$' | tail -12 | sed 's/^/       /'; cat "$T"/pv/*.csv 2>/dev/null | sed 's/^/       /'
+  [ $rc = 0 ] && echo "     (informativo) qnn-platform-validator rc=0" || echo "     (informativo) qnn-platform-validator rc=$rc"
+  rm -rf "$T"
+else sk "QAIRT non installato in /opt/qairt/current o /dev/fastrpc-cdsp assente"; fi
+
+echo "== RISULTATO: $NOK OK, $NKO KO -> $([ $NKO = 0 ] && echo 'NPU OK' || echo 'NPU KO')"
+sync
+if [ -r /usr/local/lib/83hl-log.sh ]; then . /usr/local/lib/83hl-log.sh; M=$(log83_mount) && cp "$R" "$M/83hl-npu-test.log" && sync && echo "Copiato su $M (83HL-LOG)"; fi
+[ $NKO = 0 ]

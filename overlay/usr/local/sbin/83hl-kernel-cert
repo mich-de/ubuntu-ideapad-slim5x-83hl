@@ -1,0 +1,71 @@
+#!/usr/bin/python3 -I
+"""Inserisce un certificato (DER) nello spazio riservato system_extra_cert del kernel Ubuntu arm64.
+
+Uso: 83hl-kernel-cert <linux-in> <System.map> <cert.der> <linux-out>
+
+Perché: sul firmware Qualcomm le variabili UEFI non sono leggibili da Linux all'avvio, quindi la
+chiave MOK non entra mai nel keyring del kernel e in lockdown i moduli firmati MOK vengono rifiutati.
+Con il certificato nel keyring integrato (CONFIG_SYSTEM_EXTRA_CERTIFICATE) i moduli 83HL si caricano.
+
+<linux-in> è la sezione .linux del UKI Ubuntu: EFI zboot (MZ..zimg, payload zstd/gzip) oppure Image
+arm64 non compresso. L'uscita è sempre Image non compresso (eseguibile EFI valido, EFI stub).
+"""
+import struct, sys, zlib
+
+def die(m):
+    sys.exit(f"83hl-kernel-cert: {m}")
+
+src, smap, certf, out = sys.argv[1:5]
+d = open(src, 'rb').read()
+if d[:2] != b'MZ':
+    die("ingresso non è un eseguibile EFI")
+if d[4:8] == b'zimg':
+    off, size = struct.unpack('<II', d[8:16])
+    comp = d[24:32].rstrip(b'\0').decode()
+    payload = d[off:off + size]
+    if comp == 'zstd':
+        import zstandard
+        img = zstandard.ZstdDecompressor().decompressobj().decompress(payload)
+    elif comp == 'gzip':
+        img = zlib.decompress(payload, 16 + zlib.MAX_WBITS)
+    else:
+        die(f"compressione zboot non gestita: {comp}")
+else:
+    img = d
+img = bytearray(img)
+if img[0x38:0x3c] != b'ARM\x64':
+    die("payload non è un Image arm64")
+
+sym = {}
+for line in open(smap):
+    p = line.split()
+    if len(p) == 3 and p[2] in ('_text', 'system_extra_cert', 'system_extra_cert_used',
+                                'system_certificate_list', 'system_certificate_list_size'):
+        sym[p[2]] = int(p[0], 16)
+need = {'_text', 'system_extra_cert', 'system_extra_cert_used', 'system_certificate_list',
+        'system_certificate_list_size'}
+if need - sym.keys():
+    die(f"simboli mancanti in System.map: {sorted(need - sym.keys())} (kernel senza SYSTEM_EXTRA_CERTIFICATE?)")
+o = {k: v - sym['_text'] for k, v in sym.items()}
+reserved = sym['system_extra_cert_used'] - sym['system_extra_cert']
+cert = open(certf, 'rb').read()
+if cert[:1] != b'\x30':
+    die("il certificato deve essere DER")
+if len(cert) > reserved:
+    die(f"certificato {len(cert)} B > spazio riservato {reserved} B")
+
+used = struct.unpack_from('<i', img, o['system_extra_cert_used'])[0]
+lsize = struct.unpack_from('<Q', img, o['system_certificate_list_size'])[0]
+base = sym['system_extra_cert'] - sym['system_certificate_list']
+if lsize != base + used:
+    die(f"incoerenza: list_size={lsize}, atteso {base}+{used} (System.map di un altro kernel?)")
+if used == len(cert) and img[o['system_extra_cert']:o['system_extra_cert'] + used] == cert:
+    print("certificato già presente")
+else:
+    if used:
+        print(f"sostituisco il certificato extra precedente ({used} B)")
+    img[o['system_extra_cert']:o['system_extra_cert'] + reserved] = cert + b'\0' * (reserved - len(cert))
+    struct.pack_into('<i', img, o['system_extra_cert_used'], len(cert))
+    struct.pack_into('<Q', img, o['system_certificate_list_size'], base + len(cert))
+    print(f"certificato inserito: {len(cert)} B su {reserved}, list_size {lsize} -> {base + len(cert)}")
+open(out, 'wb').write(img)

@@ -1,0 +1,12 @@
+Wed Nov 11 11:04:10 UTC 2026
+[   27.898669] lenovo-83hl-ec 5-0060: EC Lenovo 83HL: reg 0x90 -> 00 00 00 00 00 00, ventola1 0 giri/min
+/sys/class/hwmon/hwmon7/temp1_input:0
+/sys/class/hwmon/hwmon7/temp2_input:0
+/sys/class/hwmon/hwmon7/temp3_input:0
+/sys/class/hwmon/hwmon7/temp4_input:0
+/sys/class/hwmon/hwmon7/temp5_input:0
+/sys/class/hwmon/hwmon7/temp6_input:0
+/sys/class/hwmon/hwmon7/fan1_input:0
+/sys/class/hwmon/hwmon7/fan1_target:0
+/sys/class/hwmon/hwmon7/fan2_input:0
+/sys/class/hwmon/hwmon7/fan2_target:0

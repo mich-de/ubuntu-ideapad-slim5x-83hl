@@ -1,0 +1,10 @@
+#!/bin/sh
+# 83HL: firmware ADSP/CDSP/GPU nell'initramfs (vedi /etc/dracut.conf.d/83hl-firmware.conf)
+[ "$1" = prereqs ] && exit 0
+. /usr/share/initramfs-tools/hook-functions
+D=/usr/lib/firmware/qcom/x1p42100/LENOVO/83HL
+for f in $D/qcadsp8380.mbn $D/adsp_dtbs.elf $D/qccdsp8380.mbn $D/cdsp_dtbs.elf $D/qcdxkmsucpurwa.mbn \
+         /usr/lib/firmware/qcom/gen71500_sqe.fw.zst /usr/lib/firmware/qcom/gen71500_gmu.bin.zst; do
+  [ -f "$f" ] && copy_file firmware "$f"
+done
+exit 0

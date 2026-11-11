@@ -1,28 +1,58 @@
 // SPDX-License-Identifier: BSD-3-Clause
 /*
- * 83HL: DTS di Glathe + EC Qualcomm di riferimento (ventola).
- * EC su I2C6 Windows = i2c5 Linux, indirizzo 0x76 (DSDT: UMPC I2cSerialBusV2 0x0076 "\_SB.I2C6").
- * IRQ: DSDT GIO0 pin 0x140 ("RCVD EC INT") -> direct-connect idx 5 -> GSIV 0x2F8 -> SPI 728 -> PDC 142 -> gpio66
- * (stessa conversione verificata su coperchio gpio92, touchpad gpio3, tastiera gpio67).
+ * 83HL: DTS di Glathe + correzioni locali (iris).
  */
 #include "x1p42100-lenovo-ideapad-slim5x-lcd.dts"
 
+/*
+ * EC Lenovo: i2c5 (Windows \_SB.I2C6) indirizzo 0x60, 100 kHz (DSDT: connessione ENE9, metodi ECNR/ECNW).
+ * Driver locale di sola lettura lenovo-83hl-ec (temperature e giri ventola via hwmon); la ventola la gestisce l'EC.
+ * Il bus scende a 100 kHz perche' il DSDT dichiara l'EC a 100 kHz (gli altri dispositivi del bus reggono 100 kHz).
+ * Il nodo "qcom,hamoa-crd-ec" a 0x76 (DSDT UMPC) NON esiste su questo PC: provato 2026-11-11, -ENXIO.
+ */
 &i2c5 {
-	embedded-controller@76 {
-		compatible = "qcom,hamoa-crd-ec";
-		reg = <0x76>;
+	clock-frequency = <100000>;
 
-		interrupts-extended = <&tlmm 66 IRQ_TYPE_EDGE_FALLING>;
-
-		pinctrl-0 = <&ec_int_n_default>;
-		pinctrl-names = "default";
+	embedded-controller@60 {
+		compatible = "lenovo,ideapad-slim5x-83hl-ec";
+		reg = <0x60>;
 	};
 };
 
-&tlmm {
-	ec_int_n_default: ec-int-n-state {
-		pins = "gpio66";
-		function = "gpio";
-		bias-disable;
+/*
+ * Iris (decoder video): il DTS 7.3 mette gli stream SMMU nei sottonodi "non-pixel"/"pixel" (binding nuovo),
+ * ma il driver iris backportato su kernel 7.0 (dkms/83hl-drivers) li vuole sul nodo principale.
+ * Senza "iommus" il dispositivo lavora senza IOMMU e il PC si resetta appena il codec parte (visto con ISO v4).
+ * Con un kernel che ha il driver iris 7.3 in-tree questo blocco va tolto.
+ */
+&iris {
+	iommus = <&apps_smmu 0x1940 0x0>,
+		 <&apps_smmu 0x1947 0x0>;
+
+	/delete-node/ non-pixel;
+	/delete-node/ pixel;
+};
+
+/*
+ * CDSP (NPU): voti che Windows mantiene mentre il CDSP gira (RCDS.bin: cx, mxa, mxc, xo, bus EBI1 e CLK_CTL).
+ * Il driver locale cdsp-keepalive-83hl non vota nulla finche' non viene attivato da sysfs (prova: 83hl-risky-test npu).
+ */
+/ {
+	cdsp-keepalive {
+		compatible = "lenovo,83hl-cdsp-keepalive";
+
+		power-domains = <&rpmhpd RPMHPD_CX>,
+				<&rpmhpd RPMHPD_MX>,
+				<&rpmhpd RPMHPD_MXC>;
+		power-domain-names = "cx", "mxa", "mxc";
+
+		clocks = <&rpmhcc RPMH_CXO_CLK>;
+		clock-names = "xo";
+
+		interconnects = <&nsp_noc MASTER_CDSP_PROC QCOM_ICC_TAG_ALWAYS
+				 &mc_virt SLAVE_EBI1 QCOM_ICC_TAG_ALWAYS>,
+				<&nsp_noc MASTER_CDSP_PROC QCOM_ICC_TAG_ALWAYS
+				 &config_noc SLAVE_CLK_CTL QCOM_ICC_TAG_ALWAYS>;
+		interconnect-names = "ebi", "clkctl";
 	};
 };

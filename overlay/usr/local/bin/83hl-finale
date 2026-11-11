@@ -1,0 +1,13 @@
+#!/bin/bash
+# Prova finale 83HL: un solo comando, nessuna chiavetta da staccare o montare a mano. Uso: sudo 83hl-finale
+[ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
+. /usr/local/lib/83hl-log.sh
+M=$(log83_mount) || { echo "ATTENZIONE: non riesco a montare 83HL-LOG; i report restano in /root"; M=/root; }
+echo "Report in: $M   (NON staccare la chiavetta)"
+echo "== 1/4 test periferiche"; 83hl-test
+echo "== 2/4 EC Lenovo (temperature e ventola)"
+{ date; dmesg | grep -iE 'lenovo-83hl-ec|5-0060'; for h in /sys/class/hwmon/hwmon*; do [ "$(cat $h/name 2>/dev/null)" = lenovo_83hl_ec ] && grep -H . $h/temp*_input $h/fan*; done; } 2>&1 | tee "$M/ec.txt"; sync
+echo "== 3/4 NPU (fino a 4 minuti, puo' riavviare il PC)"; 83hl-risky-test npu
+echo "== 4/4 test periferiche finale"; 83hl-test
+dmesg > "$M/dmesg-finale.txt" 2>&1; sync
+ls -l "$M"; echo "=== FINITO: spegni e torna in Windows ==="

@@ -30,6 +30,9 @@ echo "== 2. Overlay"
 tar -C "$T" -xpf "$SRC/overlay.tar" --no-same-owner
 chown -R root:root "$T/usr/lib/83hl" "$T/usr/share/83hl" "$T/usr/src/83hl-drivers-1.0" "$T/etc/dkms/framework.conf.d/83hl.conf" "$T/etc/modprobe.d/83hl-ec.conf" "$T/usr/lib/firmware/qcom/x1p42100" "$T/usr/local/sbin" "$T/usr/local/bin" "$T/etc/kernel/postinst.d/zz-83hl-uki"
 chroot "$T" /usr/local/sbin/83hl-fix-ucm
+chown root:root "$T/etc/dracut.conf.d/83hl-firmware.conf" "$T/etc/initramfs-tools/hooks/83hl-firmware"
+# firmware ADSP/CDSP/GPU nell'initramfs (audio, batteria, USB-C, NPU, GPU dipendono da questo)
+chroot "$T" update-initramfs -u -k all
 rm -f "$T/boot/dtb"   # con Secure Boot GRUB rifiuta 'devicetree': il DTB va nel UKI
 
 echo "== 3. Chiave MOK di questo sistema"

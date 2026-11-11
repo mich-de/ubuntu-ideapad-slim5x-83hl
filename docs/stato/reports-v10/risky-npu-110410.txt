@@ -1,0 +1,137 @@
+[   13.319962] qcom-rpmhpd 17500000.rsc:power-controller: sync_state() pending due to cdsp-keepalive
+[   27.543774] cdsp_keepalive_83hl: loading out-of-tree module taints kernel.
+[   27.598454] cdsp-keepalive-83hl cdsp-keepalive: pronto: 3 rail, xo si, bus ebi si clkctl si
+11:04:12 PROVA: firmware attuale (voti mask 0)
+[  432.198800] remoteproc remoteproc1: powering up cdsp
+[  432.200803] remoteproc remoteproc1: Booting fw image qcom/x1p42100/LENOVO/83HL/qccdsp8380.mbn, size 3195304
+[  432.291913] remoteproc remoteproc1: remote processor cdsp is now up
+[  432.295363] qcom,fastrpc 32300000.remoteproc:glink-edge.fastrpcglink-apps-dsp.-1.-1: no reserved DMA memory for FASTRPC
+   stato=running irq_glink_cdsp=100 nodi=/dev/fastrpc-cdsp /dev/fastrpc-cdsp-secure 
+   ESITO: il CDSP RISPONDE
+CDSP FUNZIONANTE: firmware attuale, voti mask 0 (lasciato attivo)
+[1/7] dipendenze runtime (libyaml, libbsd)
+  ok  libyaml-0.so.2 presente
+  ok  libbsd.so.0 presente
+[2/7] fastrpc userspace (qualcomm/fastrpc) in /usr/local
+  ok  libcdsprpc.so.1 registrata
+  ok  libcdsprpc.so (nome non versionato richiesto da libQnnHtpV73Stub.so)
+[3/7] gruppo fastrpc
+  ok  gruppo fastrpc
+  ok  utente ubuntu aggiunto a fastrpc (serve nuovo login)
+  ok  utente installer aggiunto a fastrpc (serve nuovo login)
+[4/7] librerie lato DSP in /usr/share/qcom/x1p42100/LENOVO/83HL/dsp/cdsp
+  ok  fastrpc_shell_unsigned_3
+  ok  fastrpc_shell_3
+  ok  libc++.so.1
+  ok  libc++abi.so.1
+  ok  firmware e shell stessa build (CDSP.HT.2.9.c1-00079)
+[5/7] configurazione fastrpc (/usr/share/qcom/conf.d/83hl.yaml)
+  ok  modello DT: Lenovo IdeaPad Slim 5x 14Q8X9 (LCD)
+[6/7] QAIRT/QNN (opzionale)
+  ok  QAIRT 2.47.0.260601 in /opt/qairt/current, skel V73 in /usr/share/qcom/x1p42100/LENOVO/83HL/dsp/cdsp
+[7/7] udev + servizio cdsprpcd
+  ok  cdsprpcd attivo
+SETUP OK - ora: 83hl-npu-test
+== 83hl-npu-test 2026-11-11T11:05:08+00:00 kernel 7.0.0-30-generic
+== modello DT: Lenovo IdeaPad Slim 5x 14Q8X9 (LCD)
+--- 1. device tree
+OK   nodo CDSP remoteproc@32300000 status=okay
+     firmware-name: qcom/x1p42100/LENOVO/83HL/qccdsp8380.mbn qcom/x1p42100/LENOVO/83HL/cdsp_dtbs.elf 
+OK   nodo fastrpc (12 compute-cb, non-secure-domain=si)
+--- 2. firmware e librerie DSP
+OK   /usr/lib/firmware/qcom/x1p42100/LENOVO/83HL/qccdsp8380.mbn
+OK   /usr/lib/firmware/qcom/x1p42100/LENOVO/83HL/cdsp_dtbs.elf
+OK   /usr/share/qcom/x1p42100/LENOVO/83HL/dsp/cdsp/fastrpc_shell_unsigned_3
+OK   /usr/share/qcom/x1p42100/LENOVO/83HL/dsp/cdsp/fastrpc_shell_3
+OK   /usr/share/qcom/x1p42100/LENOVO/83HL/dsp/cdsp/libc++.so.1
+OK   build firmware = build shell (CDSP.HT.2.9.c1-00079)
+--- 3. kernel
+OK   modulo qcom_q6v5_pas caricato
+OK   modulo fastrpc caricato
+     /sys/class/remoteproc/remoteproc1 name=cdsp firmware=qcom/x1p42100/LENOVO/83HL/qccdsp8380.mbn
+OK   remoteproc CDSP state=running
+OK   /dev/fastrpc-cdsp (root:fastrpc 640)
+OK   /dev/fastrpc-cdsp-secure (root:root 600)
+OK   /dev/dma_heap/system
+     dmesg:
+       [  432.296984] platform 32300000.remoteproc:glink-edge:fastrpc:compute-cb@4: Adding to iommu group 27
+       [  432.297432] platform 32300000.remoteproc:glink-edge:fastrpc:compute-cb@5: Adding to iommu group 28
+       [  432.297878] platform 32300000.remoteproc:glink-edge:fastrpc:compute-cb@6: Adding to iommu group 29
+       [  432.298341] platform 32300000.remoteproc:glink-edge:fastrpc:compute-cb@7: Adding to iommu group 30
+       [  432.298781] platform 32300000.remoteproc:glink-edge:fastrpc:compute-cb@8: Adding to iommu group 31
+       [  432.299187] platform 32300000.remoteproc:glink-edge:fastrpc:compute-cb@10: Adding to iommu group 32
+       [  432.299674] platform 32300000.remoteproc:glink-edge:fastrpc:compute-cb@11: Adding to iommu group 33
+       [  432.299979] platform 32300000.remoteproc:glink-edge:fastrpc:compute-cb@12: Adding to iommu group 34
+       [  432.300303] platform 32300000.remoteproc:glink-edge:fastrpc:compute-cb@13: Adding to iommu group 35
+       [  464.354909]  32300000.remoteproc:glink-edge: intent request timed out
+       [  464.354928] qcom,fastrpc 32300000.remoteproc:glink-edge.fastrpcglink-apps-dsp.-1.-1: Error: dsp information is incorrect err: -110
+       [  474.594840]  32300000.remoteproc:glink-edge: intent request timed out
+--- 4. userspace
+OK   libcdsprpc.so.1
+OK   83hl.yaml contiene il modello DT
+OK   cdsprpcd attivo
+     fastrpc-healthcheck:
+       DSP firmware path : /lib/firmware/
+       DSP build ID      : CDSP.HT.2.9.c1-00079-HAMOA-1_20251126_213302
+       DSP dynamic libs path : /usr/share/qcom/x1p42100/LENOVO/83HL/dsp
+       
+       DMA-BUF Heap Support:
+       System heap -> available
+       
+       DSP Summary:
+       DSP      State      SignedPD  UnsignedPD* FastRPC Support
+       ---------------------------------------------------------------------------------
+       ADSP     Online     No        No          No (Missing shell build ID)
+       CDSP     Online     Yes       Yes         Yes
+       
+       * If Unsigned PD not supported, needs signing to run
+--- 5. FastRPC end-to-end su unsigned PD (calculator/hap_example/multithreading, skel v68 open source)
+KO   fastrpc_test unsigned PD (rc=124) -> journalctl -t fastrpc_test; dmesg
+--- 6. QNN HTP (QAIRT, opzionale)
+     soc0: soc_id=635 machine=Lenovo IdeaPad Slim 5x 14Q8X9 (LCD) (X1E80100=555; QNN legge soc_id)
+OK   skel /usr/share/qcom/x1p42100/LENOVO/83HL/dsp/cdsp/libQnnHtpV73Skel.so
+       Processing inference input(s):
+       input.raw
+            0.9ms [ ERROR ]  <E> No Snapdragon SOC detected
+            0.9ms [ ERROR ]  <E> No Snapdragon SOC detected
+            0.9ms [ ERROR ]  <E> Failed to init router
+            0.9ms [ ERROR ]  <E> failed sg_htpSingletonProvider initialize: 4000
+            0.9ms [ ERROR ]  <E> No Snapdragon SOC detected
+            0.9ms [ ERROR ]  <E> No Snapdragon SOC detected
+            0.9ms [ ERROR ]  <E> Failed to init router
+            0.9ms [ ERROR ]  <E> Failed to initialize provider
+            0.9ms [ ERROR ] Could not initialize backend
+       Backend Initialization failure
+     ritento con soc_id simulato 555 (SoC reale non riconosciuto/non ammesso da questa versione QAIRT)
+       173941.8ms [ ERROR ]  <E> DspTransport.openSession qnn_open failed, 0xffffffff, prio 100
+       173941.8ms [ ERROR ]  <E> IDspTransport: Unknown rpc status 0x000003ff
+       173941.8ms [ ERROR ]  <E> DspTransport.getHandle failed, error 0xffffffff
+       173941.8ms [ ERROR ]  <E> createDspTransportInstance failed to config transport object
+       173941.8ms [ ERROR ]  <E> error in creation of transport instance
+       173941.8ms [ ERROR ]  <E> Failed to create transport for device, error: 1002
+       173941.8ms [ ERROR ]  <E> Failed to load skel, error: 1002
+       173941.8ms [ ERROR ]  <E> Transport layer setup failed: 14001
+       173941.8ms [ ERROR ]  <E> Failed to parse default platform info: 14001
+       173941.8ms [ ERROR ]  <E> Failed to load default platform info: 14001
+       173941.8ms [ ERROR ]  <E> Failed to parse platform config: 14001
+       Device Creation failure
+KO   qnn-net-run su HTP (rc=11)
+       PF_VALIDATOR: ERROR: Also make sure ADSP_LIBRARY_PATH points to directory containing skels.
+       Unit Test on the backend DSP: Failed.
+       QNN is NOT supported for backend DSP on the device.
+       *********** Results Summary ***********
+       Backend = DSP
+       {
+         Backend Hardware  : Supported
+         Backend Libraries : Found
+         Library Version   : Not Found
+         Core Version      : Hexagon Architecture V73
+         Unit Test         : Failed
+       }
+       Platform Validator Results:
+       Backend,Hardware Backend,Library Prerequisites,Library Version,Backend Core Version,Unit Test,Overall Result
+       DSP,Supported,Found,Not Found,Hexagon Architecture V73,Failed,Failed
+     (informativo) qnn-platform-validator rc=0
+== RISULTATO: 18 OK, 2 KO -> NPU KO
+Copiato su /run/media/ubuntu/83HL-LOG (83HL-LOG)
+FINITO senza riavvii: /run/media/ubuntu/83HL-LOG/risky-npu-110410.txt

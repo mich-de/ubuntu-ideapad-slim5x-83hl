@@ -7,6 +7,9 @@ sec() { printf '\n===== %s =====\n' "$1"; }
 ok()  { printf '[%s] %s\n' "$1" "$2"; }
 chk() { # $1 nome, $2 comando condizione
   if eval "$2" >/dev/null 2>&1; then ok OK "$1"; else ok KO "$1"; fi; }
+# 3D: vero se il compositor ha aperto il nodo render Adreno, oppure se EGL senza display riporta Adreno/FD7xx
+gpu3d() { local p; for p in $(pgrep -x gnome-shell; pgrep -x Xwayland); do ls -l /proc/$p/fd 2>/dev/null | grep -q 'dri/renderD' && return 0; done
+  eglinfo -B -p surfaceless 2>/dev/null | grep -qiE 'renderer.*(adreno|FD7)'; }
 {
 sec "SISTEMA"; uname -a; cat /proc/device-tree/model 2>/dev/null; echo
 cat /proc/cmdline; cat /sys/class/dmi/id/product_family /sys/class/dmi/id/bios_version 2>/dev/null
@@ -14,7 +17,7 @@ cat /proc/cmdline; cat /sys/class/dmi/id/product_family /sys/class/dmi/id/bios_v
 sec "RIEPILOGO"
 chk "DTB 83HL caricato"           "tr -d '\0' </proc/device-tree/compatible | grep -q ideapad-slim5x"
 chk "GPU Adreno (msm + render)"   "ls /dev/dri/renderD* && dmesg | grep -qi 'msm_dpu\|adreno'"
-chk "Accelerazione 3D (non llvmpipe)" "su -l \$(logname 2>/dev/null || echo ubuntu) -c 'DISPLAY=:0 glxinfo -B' 2>/dev/null | grep -qi 'renderer.*adreno\|FD7'"
+chk "Accelerazione 3D (non llvmpipe)" "gpu3d"
 chk "Retroilluminazione"          "ls /sys/class/backlight/* "
 chk "Tastiera I2C-HID"            "grep -qiE 'keyboard' /proc/bus/input/devices"
 chk "Touchpad"                    "grep -qiE 'touchpad|FTCS' /proc/bus/input/devices"
@@ -28,10 +31,11 @@ chk "Lettore SD (mmc host)"       "ls /sys/class/mmc_host/mmc*"
 chk "Batteria"                    "ls /sys/class/power_supply/ | grep -qi bat"
 chk "USB-C typec"                 "ls /sys/class/typec/port0"
 chk "ADSP avviato"                "grep -l running /sys/class/remoteproc/*/state"
+chk "NPU: /dev/fastrpc-cdsp"       "ls /dev/fastrpc-cdsp"
+chk "EC Lenovo (temperature e ventola)" "grep -qx lenovo_83hl_ec /sys/class/hwmon/hwmon*/name"
 chk "Sospensione deep disponibile" "grep -q deep /sys/power/mem_sleep"
 chk "Video HW: modulo iris 83HL"   "modinfo -F filename qcom_iris | grep -q updates/83hl && lsmod | grep -q qcom_iris"
 chk "Video HW: decoder V4L2 iris"  "grep -qi iris /sys/class/video4linux/*/name"
-chk "EC ventola (qcom-hamoa-ec)"    "modprobe qcom_hamoa_ec && ls /sys/class/thermal/*/type | xargs grep -l qcom_ec_fan"
 
 sec "REMOTEPROC"; for r in /sys/class/remoteproc/*; do echo "$(cat $r/name) $(cat $r/state) $(cat $r/firmware 2>/dev/null)"; done
 sec "FIRMWARE NON TROVATI"; dmesg | grep -iE 'firmware|direct firmware load' | grep -iE 'fail|error|not found|-2' | sort -u
@@ -39,6 +43,10 @@ sec "ERRORI KERNEL"; dmesg --level=err,crit,alert,emerg | tail -80
 sec "DEFERRED PROBE"; cat /sys/kernel/debug/devices_deferred 2>/dev/null
 sec "INPUT"; grep -E '^N:|^H:' /proc/bus/input/devices
 sec "DRM"; ls -la /dev/dri; for c in /sys/class/drm/card*-*; do echo "$c $(cat $c/status)"; done
+sec "GPU 3D"; for p in $(pgrep -x gnome-shell); do echo "gnome-shell $p:"; ls -l /proc/$p/fd 2>/dev/null | grep -o '/dev/dri/.*' | sort | uniq -c; done
+eglinfo -B -p surfaceless 2>&1 | grep -iE 'vendor|renderer|version' | head -8; dmesg | grep -iE 'adreno|a7[0-9][0-9]|gmu|sqe|zap' | tail -15
+sec "DSP / GLINK / QRTR"; ls /sys/bus/rpmsg/devices 2>&1; ls -la /dev/fastrpc* 2>&1; command -v qrtr-lookup >/dev/null && qrtr-lookup 2>&1 | head -80
+grep -iE 'ipcc|smp2p|glink|remoteproc|cdsp|adsp' /proc/interrupts
 sec "BACKLIGHT"; for b in /sys/class/backlight/*; do echo "$b max=$(cat $b/max_brightness) cur=$(cat $b/brightness)"; done
 sec "AUDIO"; cat /proc/asound/cards; aplay -l 2>&1; arecord -l 2>&1; command -v wpctl >/dev/null && su -l "$(logname 2>/dev/null)" -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) wpctl status' 2>&1 | head -60
 sec "RETE"; ip -br link; rfkill list; iw dev 2>&1; hciconfig -a 2>&1 | head -20
@@ -47,7 +55,7 @@ sec "PCI"; lspci -nnk
 sec "MMC"; ls -la /sys/class/mmc_host/ 2>&1; dmesg | grep -iE 'mmc|sdhci' | tail -20
 sec "VIDEO HW (IRIS)"; modinfo -F filename qcom_iris videocc_x1p42100 2>&1; for v in /sys/class/video4linux/*; do echo "$v $(cat $v/name)"; done; dmesg | grep -iE 'iris|videocc|vpu' | tail -30
 if command -v gst-inspect-1.0 >/dev/null; then gst-inspect-1.0 2>/dev/null | grep -iE 'v4l2.*(dec|enc)'; fi
-sec "EC VENTOLA (test una tantum, non permanente)"; /usr/local/sbin/83hl-ec test 2>&1; ls /sys/bus/i2c/devices/ | grep -i 0076
+sec "EC LENOVO"; dmesg | grep -iE 'lenovo-83hl-ec|83hl_ec|5-0060' | tail -5; for h in /sys/class/hwmon/hwmon*; do [ "$(cat $h/name)" = lenovo_83hl_ec ] && grep -H . $h/temp*_input $h/fan* 2>&1; done
 sec "IMPRONTA"; lsusb -d 27c6:650a -v 2>/dev/null | head -20; fprintd-list "$(logname 2>/dev/null)" 2>&1 | head
 sec "ALIMENTAZIONE"; for p in /sys/class/power_supply/*; do echo "== $p"; cat $p/uevent; done
 sec "TYPEC"; ls -la /sys/class/typec/ 2>&1
@@ -59,5 +67,6 @@ sec "DMESG COMPLETO"; dmesg
 
 echo "Report: $R"; sed -n '/===== RIEPILOGO/,/===== REMOTEPROC/p' "$R" | head -25
 # copia sulla partizione LOG della chiavetta
-DEV=$(blkid -L 83HL-LOG 2>/dev/null)
-if [ -n "$DEV" ]; then M=$(mktemp -d); mount "$DEV" "$M" && cp "$R" "$M/" && sync && umount "$M" && echo "Copiato su $DEV (83HL-LOG)"; fi
+. /usr/local/lib/83hl-log.sh
+if M=$(log83_mount); then cp "$R" "$M/" && sync && echo "Copiato su $M (83HL-LOG)"
+else echo "ATTENZIONE: partizione 83HL-LOG non montabile, report solo in $R"; fi

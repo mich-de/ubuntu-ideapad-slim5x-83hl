@@ -1,1 +1,1 @@
-obj-m += iris/ clk/ ec/
+obj-m += iris/ clk/ ec/ npu/

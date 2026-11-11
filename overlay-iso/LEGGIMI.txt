@@ -2,7 +2,7 @@ UBUNTU 26.04.1 PER LENOVO IDEAPAD SLIM 5x 14Q8X9 (83HL) - COSA FARE
 =====================================================================
 
 IN BREVE (l'ordine conta)
-  A. BIOS: abilita "Allow Microsoft 3rd Party UEFI CA"        (una volta)
+  A. Secure Boot: aggiungere la CA Microsoft 3rd Party al db    (una volta, GIA' FATTO)
   B. Registra la chiave MOK-83HL.der con MokManager            (una volta)
   C. Avvia Ubuntu dalla chiavetta e lancia: sudo 83hl-test
   D. Torna su Windows e scrivi a Claude: "report pronto"
@@ -14,22 +14,20 @@ Windows non viene toccato: si riavvia sempre da F12 > "Windows Boot Manager".
 Cosa c'e' sulla chiavetta
 - Partizione Ubuntu (E:)  : sistema live, kernel 83HL firmato, MOK-83HL.der
 - Partizione EFI (6 MB)   : avvio, senza lettera
-- Partizione 83HL-LOG (F:): questo file e i report dei test
+- Partizione 83HL-LOG (F:): questo file, MOK-83HL.der e i report dei test
 Se Windows chiede di "formattare" una di queste unita': rispondi NO.
 
 Tastiera: in MokManager e nel menu di avvio la tastiera e' AMERICANA.
 Per le password usa solo lettere minuscole (tranne y e z) e numeri.
 
 
-A. BIOS (una volta sola, ~2 minuti)
------------------------------------
-1. Spegni il PC. Accendi e premi F2 ripetutamente (oppure: da spento, tasto
-   Novo/foro laterale > "BIOS Setup").
-2. Scheda Security:
-   - Secure Boot ................................ Enabled (lascialo cosi')
-   - Allow Microsoft 3rd Party UEFI CA .......... Enabled
-3. F10 > Yes per salvare e uscire. Windows deve ripartire normalmente.
->> Se "Allow Microsoft 3rd Party UEFI CA" non esiste: FERMATI e dillo a Claude.
+A. SECURE BOOT (una volta sola) - GIA' FATTO l'11/11/2026
+--------------------------------------------------------
+Il BIOS 83HL (PUCN55WW) NON ha la voce "Allow Microsoft 3rd Party UEFI CA".
+La CA e' stata aggiunta al db da Windows: BIOS > Security > "Reset to Setup
+Mode", poi Claude ha lanciato 83hl-sb-apply.ps1 (chiavi originali Lenovo +
+Microsoft UEFI CA 2011/2023), poi Secure Boot di nuovo Enabled.
+Se un giorno fai "Restore Factory Keys" nel BIOS la CA sparisce: chiedi a Claude.
 
 
 B. REGISTRARE LA CHIAVE 83HL (una volta sola, ~3 minuti)
@@ -40,7 +38,7 @@ B. REGISTRARE LA CHIAVE 83HL (una volta sola, ~3 minuti)
        Registra chiave 83HL (MokManager: Enroll key from disk)
 4. Si apre la schermata BLU di MokManager:
        Enroll key from disk
-       > scegli il volume della chiavetta (di solito il primo)
+       > scegli il volume "83HL-LOG" (la partizione Ubuntu non e' leggibile)
        > MOK-83HL.der
        > Continue > Yes > Reboot
 5. Caso alternativo: se all'avvio compare "Verification failed" o
@@ -58,30 +56,27 @@ C. PROVARE UBUNTU SENZA INSTALLARE (~15 minuti)
 2. Al primo schermo scegli "Prova Ubuntu" (NON installare ancora).
 3. Collegati al Wi-Fi (in alto a destra), serve solo per alcuni test.
 4. Apri il Terminale (Ctrl+Alt+T) e scrivi:
+       sudo 83hl-finale
+   Fa tutto da solo (test periferiche, EC, NPU, test finale) in circa
+   5 minuti e salva i report sulla chiavetta. Durante la prova NPU il PC
+   puo' riavviarsi: in quel caso riparti dalla chiavetta e scrivi
        sudo 83hl-test
-   Alla fine stampa un riepilogo OK/KO e scrive
-   "Copiato su ... (83HL-LOG)": il report e' salvato sulla chiavetta.
+   IMPORTANTE: NON staccare MAI la chiavetta mentre Ubuntu e' acceso
+   (il sistema gira dalla chiavetta: se la stacchi i comandi spariscono).
 5. Prove a mano (annota cosa NON funziona):
    [ ] audio altoparlanti (Impostazioni > Suono > Prova)
-   [ ] microfono (Impostazioni > Suono > Ingresso: la barra si muove?)
    [ ] luminosita' con i tasti Fn
-   [ ] touchpad (clic, scorrimento a due dita)
-   [ ] Wi-Fi e Bluetooth
-   [ ] webcam (app "Fotocamera"/Cheese)
-   [ ] lettore SD (inserisci una scheda)
-   [ ] lettore impronte (Impostazioni > Utenti, solo se presente)
-   [ ] sospensione: chiudi il coperchio 10 secondi e riapri,
-       poi rilancia "sudo 83hl-test" (secondo report)
-6. Facoltativo, NPU (sperimentale):
-       sudo 83hl-npu-setup
-       sudo 83hl-npu-test
-7. Spegni (menu in alto a destra > Spegni). NON installare.
+   [ ] webcam (app "Fotocamera")
+   [ ] un filmato con l'app "Video"
+   [ ] sospensione: chiudi il coperchio 10 secondi e riapri
+6. Spegni (menu in alto a destra > Spegni). NON installare.
 
 
 D. MANDARE I RISULTATI
 ----------------------
 1. Avvia Windows con la chiavetta inserita.
-2. Su F: (83HL-LOG) devono esserci i file 83hl-report-DATA-ORA.txt
+2. Su F: (83HL-LOG) devono esserci i file 83hl-report-DATA-ORA.txt,
+   ec.txt, risky-npu-ORA.txt e dmesg-finale.txt
    (ed eventualmente 83hl-npu-test.log).
 3. Scrivi a Claude: "report pronto", piu' la lista delle prove a mano
    fallite e le eventuali foto.
@@ -130,17 +125,17 @@ VIDEO HARDWARE (Iris)
   Video di GNOME, ffmpeg (h264_v4l2m2m / hevc_v4l2m2m). Nei browser e'
   ancora sperimentale. Verifica: "sudo 83hl-test" > righe "Video HW".
 
-VENTOLA (EC)
-- Driver incluso ma DISATTIVATO di default finche' non e' verificato
-  (la ventola funziona comunque: la gestisce il firmware).
-- "sudo 83hl-test" lo prova una volta e scrive l'esito nel report.
-- Comandi:  sudo 83hl-ec status | test | enable | disable
-            sudo 83hl-ec fan 0 auto    (controllo automatico)
-            sudo 83hl-ec fan 0 150     (PWM fisso 80-255)
+VENTOLA E TEMPERATURE (EC Lenovo)
+- La ventola la gestisce da solo il controller Lenovo (EC).
+- Driver di sola lettura incluso: giri ventola e temperature con il
+  comando "sensors" (voce lenovo_83hl_ec). Non regola la ventola.
 
 NPU HEXAGON (sperimentale)
-- sudo 83hl-npu-setup, poi sudo 83hl-npu-test (log anche su F:).
-- DSP e FastRPC dovrebbero funzionare; i modelli AI (QNN) sono incerti.
+- Il processore NPU parte ma non risponde: problema noto dei portatili
+  Snapdragon X Plus 8 core con Linux (qualcomm/fastrpc issue 405).
+- "sudo 83hl-risky-test npu" prova a tenere accese le alimentazioni
+  che Windows mantiene per l'NPU e, se non basta, i firmware NPU piu'
+  vecchi presenti in Windows; alla fine dice se una combinazione va.
 
 SENSORI
 - Questo modello NON ha sensori di presenza, luce o orientamento (sono

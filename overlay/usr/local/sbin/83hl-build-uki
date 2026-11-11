@@ -23,6 +23,16 @@ if '.linux' not in got:
 print('sezioni estratte:', got or 'nessuna (kernel puro)')
 EOF
 UNAME=$(tr -d '\0\n' < "$W/uname" 2>/dev/null || true)
+# certificato MOK nel keyring integrato del kernel: senza, in lockdown i moduli 83HL sono rifiutati
+# (il firmware Qualcomm non espone le variabili UEFI a Linux, quindi la MOK non viene letta)
+SYSMAP=${SYSMAP:-/boot/System.map-$UNAME}
+if [ -f "$SYSMAP" ]; then
+  openssl x509 -in "$KEYS/MOK.crt" -outform DER -out "$W/mok.der"
+  "$(dirname "$(readlink -f "$0")")/83hl-kernel-cert" "$W/linux" "$SYSMAP" "$W/mok.der" "$W/linux.cert"
+  mv "$W/linux.cert" "$W/linux"
+else
+  echo "ATTENZIONE: $SYSMAP assente, certificato MOK NON inserito: i moduli 83HL non si caricheranno" >&2
+fi
 DTBS=(); for d in "$DTBDIR"/*.dtb; do DTBS+=(--devicetree-auto="$d"); done
 ukify build \
   --stub="$STUB" --linux="$W/linux" ${UNAME:+--uname="$UNAME"} \

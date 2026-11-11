@@ -1,0 +1,49 @@
+#!/bin/bash
+# Prove che possono riavviare il PC. Scrive ogni passo su 83HL-LOG (con sync) PRIMA di eseguirlo,
+# così dopo un riavvio improvviso l'ultima riga del file dice quale passo l'ha causato.
+# Uso: sudo 83hl-risky-test video | npu
+[ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
+. /usr/local/lib/83hl-log.sh
+M=$(log83_mount) || { echo "partizione 83HL-LOG non montabile: annullo"; exit 1; }
+T="$M/risky-$1-$(date +%H%M%S).txt"
+step() { echo "$(date +%T) PASSO: $*" | tee -a "$T"; sync; sleep 2; "$@" >>"$T" 2>&1; echo "   esito=$?" | tee -a "$T"; dmesg | tail -15 >>"$T"; sync; sleep 3; }
+case "$1" in
+  video) step modprobe videocc_x1p42100; step modprobe qcom_iris
+         step sh -c 'grep -i iris /sys/class/video4linux/*/name' ;;
+  npu)   # Il CDSP parte ma poi non risponde su glink (qualcomm/fastrpc#405). Prove, in ordine:
+         #  1. firmware attuale senza voti (riferimento)   2. con i voti rail/clock/bus che tiene Windows (cdsp-keepalive)
+         #  3. se va: quale voto serve (mask 1 rail, 2 xo, 4 bus)   4. se non va: firmware piu' vecchi (cdsp-alt), con i voti
+         C=$(grep -lx cdsp /sys/class/remoteproc/*/name | head -1); C=${C%/name}
+         [ -n "$C" ] || { echo "remoteproc cdsp non trovato" | tee -a "$T"; exit 1; }
+         FW=/usr/lib/firmware/qcom/x1p42100/LENOVO/83HL; BK=/run/83hl-cdsp-orig; mkdir -p $BK
+         [ -e $BK/qccdsp8380.mbn ] || cp $FW/qccdsp8380.mbn $FW/cdsp_dtbs.elf $BK/
+         systemctl stop cdsprpcd 2>/dev/null; modprobe fastrpc; modprobe cdsp_keepalive_83hl 2>>"$T"; sleep 1
+         KA=$(ls /sys/bus/platform/drivers/cdsp-keepalive-83hl/*/active 2>/dev/null | head -1)
+         [ -n "$KA" ] || echo "ATTENZIONE: cdsp-keepalive non disponibile" | tee -a "$T"
+         dmesg | grep -i keepalive | tail -3 >>"$T"
+         irqs() { awk '/393216 Edge +glink-smem/{print $2}' /proc/interrupts; }
+         try() { # $1 etichetta, $2 cartella firmware, $3 mask voti (0 = nessuno)
+           echo "$(date +%T) PROVA: $1 (voti mask $3)" | tee -a "$T"; sync
+           echo stop > $C/state 2>>"$T"; sleep 2; cp "$2/qccdsp8380.mbn" "$2/cdsp_dtbs.elf" $FW/ && sync
+           if [ -n "$KA" ]; then echo 0 > $KA; [ "$3" != 0 ] && { echo "$3" > /sys/module/cdsp_keepalive_83hl/parameters/mask; echo 1 > $KA; }; fi
+           local n0; n0=$(dmesg | wc -l); echo start > $C/state 2>>"$T"; sleep 14
+           dmesg | tail -n +$((n0+1)) | grep -iE 'remoteproc1|32300000|fastrpc|keepalive' | grep -v 'iommu group' >>"$T"
+           echo "   stato=$(cat $C/state) irq_glink_cdsp=$(irqs) nodi=$(ls /dev/fastrpc-cdsp* 2>/dev/null | tr '\n' ' ')" | tee -a "$T"
+           if [ -e /dev/fastrpc-cdsp ] && ! dmesg | tail -n +$((n0+1)) | grep -qE 'intent request timed out|dsp information is incorrect|failed to create endpoint'; then
+             echo "   ESITO: il CDSP RISPONDE" | tee -a "$T"; sync; return 0; fi
+           echo "   ESITO: non risponde" | tee -a "$T"; sync; return 1; }
+         GOOD=; GM=0
+         if try "firmware attuale" $BK 0; then GOOD=attuale
+         elif [ -n "$KA" ] && try "firmware attuale" $BK 7; then GOOD=attuale; GM=7
+           for m in 1 2 4 3 5 6; do try "firmware attuale" $BK $m && { GM=$m; break; }; done
+           [ $GM = 7 ] && try "firmware attuale" $BK 7   # nessun sottoinsieme basta: torna a tutti i voti
+         else
+           for d in /usr/lib/83hl/npu/cdsp-alt/*/; do [ -e "$d/qccdsp8380.mbn" ] || continue
+             v=$(basename "$d"); if try "firmware $v" "$d" 7; then GOOD=$v; GM=7; break; fi; done; fi
+         if [ -n "$GOOD" ]; then echo "CDSP FUNZIONANTE: firmware $GOOD, voti mask $GM (lasciato attivo)" | tee -a "$T"
+           /usr/local/sbin/83hl-npu-setup >>"$T" 2>&1; /usr/local/bin/83hl-npu-test >>"$T" 2>&1; tail -3 "$T"
+         else echo "NESSUNA combinazione fa rispondere il CDSP: ripristino l'originale" | tee -a "$T"
+           echo stop > $C/state 2>/dev/null; [ -n "$KA" ] && echo 0 > $KA; cp $BK/qccdsp8380.mbn $BK/cdsp_dtbs.elf $FW/; echo start > $C/state 2>/dev/null; fi ;;
+  *) echo "uso: sudo 83hl-risky-test video|npu"; exit 1 ;;
+esac
+echo "FINITO senza riavvii: $T" | tee -a "$T"; sync

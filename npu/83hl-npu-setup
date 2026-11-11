@@ -14,20 +14,21 @@ SRC=${NPU_SRC:-}; for c in "$SRC" /usr/lib/83hl/npu "$(dirname "$(readlink -f "$
 WIN=; [ "${1:-}" = "--windows" ] && WIN=${2:-}
 FWDIR=/usr/lib/firmware/qcom/x1p42100/LENOVO/83HL
 DSPDIR=/usr/share/qcom/x1p42100/LENOVO/83HL/dsp          # fastrpc cerca <dir>/cdsp/<file> poi <dir>/<file>
+inld() { ldconfig -p | grep -F "$1" >/dev/null; }   # niente grep -q: con pipefail darebbe SIGPIPE casuali
 ok() { echo "  ok  $*"; }; ko() { echo "  KO  $*"; RC=1; }; RC=0
 
 echo "[1/7] dipendenze runtime (libyaml, libbsd)"
 ldconfig
 for l in libyaml-0.so.2 libbsd.so.0; do
-  if ldconfig -p | grep -q "$l"; then ok "$l presente"
+  if inld "$l"; then ok "$l presente"
   else dpkg -i "$SRC"/debs/libmd0_*.deb "$SRC"/debs/libbsd0_*.deb "$SRC"/debs/libyaml-0-2_*.deb >/dev/null 2>&1; ldconfig
-       ldconfig -p | grep -q "$l" && ok "$l installata dai deb del payload" || ko "$l mancante"; fi
+       inld "$l" && ok "$l installata dai deb del payload" || ko "$l mancante"; fi
 done
 
 echo "[2/7] fastrpc userspace (qualcomm/fastrpc) in /usr/local"
-umask 022; cp -dR "$SRC"/stage/. / || ko "copia stage incompleta"   # senza -p: non altera permessi delle directory di sistema esistenti
+umask 022; cp -dR --remove-destination "$SRC"/stage/. / || ko "copia stage incompleta"   # senza -p: non altera permessi delle directory di sistema esistenti
 ldconfig
-ldconfig -p | grep -q 'libcdsprpc.so.1' && ok "libcdsprpc.so.1 registrata" || ko "libcdsprpc non vista da ldconfig (/usr/local/lib in ld.so.conf?)"
+inld libcdsprpc.so.1 && ok "libcdsprpc.so.1 registrata" || ko "libcdsprpc non vista da ldconfig (/usr/local/lib in ld.so.conf?)"
 [ -e /usr/local/lib/libcdsprpc.so ] && ok "libcdsprpc.so (nome non versionato richiesto da libQnnHtpV73Stub.so)"
 
 echo "[3/7] gruppo fastrpc"
